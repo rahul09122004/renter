@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: rent-manager
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 4 --bind 0.0.0.0:$PORT --timeout 60 --worker-class gthread --threads 2
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        generateValue: true   # ⚠️ Auto-generated strong password — check Render dashboard env vars for the value after first deploy
+      - key: FLASK_ENV
+        value: production
+      - key: ACCESS_TOKEN
+        value: ""
+      - key: PHONE_NUMBER_ID
+        value: ""
+      - key: ANTHROPIC_API_KEY
+        value: ""
+      - key: OCRSPACE_API_KEY
+        value: "helloworld"

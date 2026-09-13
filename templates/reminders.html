@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Reminders — RentManager{% endblock %}
+{% block page_title %}Reminders{% endblock %}
+{% block content %}
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem;" class="fade-up d1">
+  <!-- Schedule Settings -->
+  <div class="card">
+    <div class="card-header"><span><i class="bi bi-gear" style="margin-right:6px;color:var(--gold);"></i>Schedule Settings</span></div>
+    <div class="card-body">
+      <div class="form-group" style="margin-bottom:.85rem;">
+        <label>Reminder Trigger</label>
+        <select class="form-control">
+          <option>3 days before due date</option>
+          <option>1 day before due date</option>
+          <option>On due date</option>
+          <option>1 day after due date</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:.85rem;">
+        <label>Preferred Channel</label>
+        <select class="form-control">
+          <option>WhatsApp</option>
+          <option>SMS</option>
+          <option>Both</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:1rem;">
+        <label>Send Time</label>
+        <input class="form-control" type="time" value="09:00">
+      </div>
+      <button class="btn btn-gold" onclick="alert('Settings saved (demo)')"><i class="bi bi-check-lg"></i> Save Settings</button>
+    </div>
+  </div>
+
+  <!-- Bulk Send -->
+  <div class="card">
+    <div class="card-header"><span><i class="bi bi-broadcast" style="margin-right:6px;color:var(--green);"></i>Bulk Send</span></div>
+    <div class="card-body">
+      <p style="font-size:.83rem;color:var(--text-dim);margin-bottom:1rem;">
+        Send reminders to all <strong style="color:var(--text);">{{ tenants|length }}</strong> pending tenants immediately.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:.6rem;">
+        <button class="btn btn-ghost" style="width:100%;justify-content:center;color:#4ade80;border-color:rgba(34,197,94,.25);" onclick="sendBulk(this,'whatsapp')">
+          <i class="bi bi-whatsapp"></i> Send All WhatsApp
+        </button>
+        <button class="btn btn-ghost" style="width:100%;justify-content:center;color:#60a5fa;border-color:rgba(59,130,246,.25);" onclick="sendBulkSMS(this)">
+          <i class="bi bi-chat-dots"></i> Send All SMS
+        </button>
+      </div>
+      <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);">
+        <div style="font-size:.72rem;color:var(--text-faint);"><i class="bi bi-info-circle" style="margin-right:4px;"></i>SMS uses Fast2SMS (free). Add <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px;">FAST2SMS_KEY</code> to your .env</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Per-Renter Reminders -->
+<div class="data-table-wrap fade-up d2" style="margin-bottom:1.25rem;">
+  <div class="table-controls">
+    <div class="table-title"><i class="bi bi-person-lines-fill" style="margin-right:6px;color:var(--amber);"></i>Pending Renters — Manual Send</div>
+  </div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead><tr><th>Renter</th><th>Unit</th><th style="text-align:right;">Amount (₹)</th><th>Due Date</th><th style="text-align:center;">WhatsApp</th><th style="text-align:center;">SMS</th></tr></thead>
+      <tbody>
+        {% for t in tenants %}
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:9px;">
+              <div style="width:30px;height:30px;border-radius:50%;background:var(--amber-bg);border:1px solid rgba(245,158,11,.2);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:600;color:#fbbf24;flex-shrink:0;">{{ t.name[0].upper() }}</div>
+              <div>
+                <div style="font-weight:500;color:var(--text);font-size:.84rem;">{{ t.name }}</div>
+                <div style="font-size:.72rem;color:var(--text-faint);">{{ t.phone }}</div>
+              </div>
+            </div>
+          </td>
+          <td style="color:var(--text-dim);">{{ t.unit or '—' }}{% if t.unit_number %} #{{ t.unit_number }}{% endif %}</td>
+          <td style="font-weight:600;color:#fbbf24;text-align:right;">₹{{ "{:,.0f}".format(t.amount) }}</td>
+          <td style="color:var(--text-dim);">{{ t.get_due_day() }}th of every month{% if today and t.is_join_month(today.month, today.year) %} <span style="background:var(--blue-bg);color:#60a5fa;border:1px solid rgba(59,130,246,.2);padding:.1rem .5rem;border-radius:20px;font-size:.68rem;margin-left:4px;">New Join</span>{% endif %}</td>
+          <td style="text-align:center;">
+            {% if today and t.is_join_month(today.month, today.year) %}
+            <span style="font-size:.72rem;color:var(--text-faint);">Not due yet</span>
+            {% else %}
+            <form method="POST" action="{{ url_for('remind_tenant', tid=t.id) }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="channel" value="whatsapp">
+              <button class="btn btn-ghost btn-sm" style="color:#4ade80;border-color:rgba(34,197,94,.25);">
+                <i class="bi bi-whatsapp"></i> Send
+              </button>
+            </form>
+            {% endif %}
+          </td>
+          <td style="text-align:center;">
+            {% if today and t.is_join_month(today.month, today.year) %}
+            <span style="font-size:.72rem;color:var(--text-faint);">—</span>
+            {% else %}
+            <form method="POST" action="{{ url_for('remind_tenant', tid=t.id) }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="channel" value="sms">
+              <button class="btn btn-ghost btn-sm" style="color:#60a5fa;border-color:rgba(59,130,246,.25);">
+                <i class="bi bi-chat-dots"></i> SMS
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-faint);">
+          <i class="bi bi-check2-all" style="font-size:1.5rem;display:block;color:#4ade80;margin-bottom:.4rem;"></i>
+          All rent collected! No pending reminders.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Reminder Log -->
+<div class="data-table-wrap fade-up d3">
+  <div class="table-controls"><div class="table-title"><i class="bi bi-clock-history" style="margin-right:6px;color:var(--text-faint);"></i>Reminder Log</div></div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead><tr><th>Time</th><th>Renter</th><th>Channel</th><th>Status</th><th>Message</th></tr></thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td style="font-size:.78rem;color:var(--text-faint);white-space:nowrap;">{{ log.sent_at.strftime("%d %b %Y %H:%M") if log.sent_at else "—" }}</td>
+          <td style="color:var(--text-dim);">{{ log.tenant_name }}</td>
+          <td>
+            {% if log.channel == 'whatsapp' %}
+              <span style="color:#4ade80;font-size:.8rem;"><i class="bi bi-whatsapp" style="margin-right:4px;"></i>WhatsApp</span>
+            {% elif log.channel == 'sms' %}
+              <span style="color:#60a5fa;font-size:.8rem;"><i class="bi bi-chat-dots" style="margin-right:4px;"></i>SMS</span>
+            {% else %}
+              <span style="color:var(--text-faint);font-size:.8rem;">{{ log.channel }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if log.status == 'sent' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Sent</span>
+            {% else %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Failed</span>{% endif %}
+          </td>
+          <td style="font-size:.78rem;color:var(--text-faint);">{{ log.message or "—" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-faint);">No reminders sent yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function sendBulk(btn, channel) {
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Sending...';
+  try {
+    const r = await fetch('/api/trigger-reminders', { method: 'POST', headers: {'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content} });
+    const d = await r.json();
+    alert('WhatsApp reminders sent to ' + d.sent + ' tenant(s).');
+    window.location.reload();
+  } catch(e) { alert('Error: ' + e.message); }
+  btn.disabled = false; btn.innerHTML = orig;
+}
+
+async function sendBulkSMS(btn) {
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Sending...';
+  try {
+    const r = await fetch('/api/trigger-sms', { method: 'POST', headers: {'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content} });
+    const d = await r.json();
+    alert('SMS sent to ' + d.sent + ' tenant(s).');
+    window.location.reload();
+  } catch(e) { alert('Error: ' + e.message); }
+  btn.disabled = false; btn.innerHTML = orig;
+}
+</script>
+{% endblock %}

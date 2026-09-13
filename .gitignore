@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+env/
+venv/
+.venv/
+
+# Environment
+.env
+*.env
+
+# Database — keep instance folder but ignore the db file
+instance/rent.db
+instance/*.db
+backup/
+
+# Uploads (user files — don't commit to git)
+static/uploads/*
+!static/uploads/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+.sfdx

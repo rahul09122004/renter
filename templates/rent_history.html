@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Rent History — {{ sel_label }}{% endblock %}
+{% block page_title %}Rent History{% endblock %}
+{% block extra_styles %}
+.month-pill { padding:.25rem .75rem; border-radius:20px; font-size:.75rem; font-weight:600; border:1px solid; cursor:pointer; transition:all .15s; text-decoration:none; display:inline-block; }
+.status-paid    { background:rgba(34,197,94,.12);  color:#4ade80; border-color:rgba(34,197,94,.25); }
+.status-pending { background:rgba(245,158,11,.12); color:#fbbf24; border-color:rgba(245,158,11,.25); }
+{% endblock %}
+{% block content %}
+
+<div class="stat-grid fade-up d1">
+  <div class="stat-card c-green">
+    <i class="bi bi-check-circle stat-icon" style="color:var(--green)"></i>
+    <div class="stat-label">Collected</div>
+    <div class="stat-value" style="color:#4ade80">₹{{ "{:,.0f}".format(total_collected) }}</div>
+    <div class="stat-sub">{{ paid_count }} paid</div>
+  </div>
+  <div class="stat-card c-amber">
+    <i class="bi bi-hourglass-split stat-icon" style="color:var(--amber)"></i>
+    <div class="stat-label">Pending</div>
+    <div class="stat-value" style="color:#fbbf24">₹{{ "{:,.0f}".format(total_expected - total_collected) }}</div>
+    <div class="stat-sub">{{ pending_count }} pending</div>
+  </div>
+  <div class="stat-card c-gold">
+    <i class="bi bi-calendar3 stat-icon" style="color:var(--gold)"></i>
+    <div class="stat-label">Period</div>
+    <div class="stat-value" style="color:var(--gold);font-size:1rem;">{{ sel_label }}</div>
+    <div class="stat-sub">Selected month</div>
+  </div>
+  <div class="stat-card c-blue">
+    <i class="bi bi-percent stat-icon" style="color:var(--blue)"></i>
+    <div class="stat-label">Collection Rate</div>
+    {% set rate = ((total_collected / total_expected) * 100)|round(0)|int if total_expected > 0 else 0 %}
+    <div class="stat-value" style="color:#60a5fa">{{ rate }}%</div>
+    <div class="stat-sub">This month</div>
+  </div>
+</div>
+
+<div class="fade-up d2" style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+  <form method="GET" style="display:flex;gap:.5rem;align-items:center;flex:1;min-width:220px;">
+    <select name="month" class="form-control" style="width:auto;" onchange="syncYear(this);this.form.submit()">
+      {% for y, m, label in months %}
+      <option value="{{ m }}" data-year="{{ y }}"
+        {% if m == sel_month and y == sel_year %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="year" id="yearHidden" value="{{ sel_year }}">
+  </form>
+  <a href="{{ url_for('add_rent_record', month=sel_month, year=sel_year) }}" class="btn btn-gold btn-sm">
+    <i class="bi bi-plus-lg"></i> Add Manual Record
+  </a>
+</div>
+
+<div class="data-table-wrap fade-up d3">
+  <div class="table-controls">
+    <div class="table-title">
+      <i class="bi bi-calendar-month" style="margin-right:6px;color:var(--gold);"></i>
+      {{ sel_label }} · All Tenants
+    </div>
+  </div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Tenant</th><th>Unit</th>
+          <th style="text-align:right;">Rent</th>
+          <th style="text-align:right;">Paid</th>
+          <th>Status</th><th>Paid On</th><th>Method</th>
+          <th>Txn ID</th>
+          <th style="text-align:center;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in records %}
+        {% set color = ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'][loop.index0 % 7] %}
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="width:28px;height:28px;border-radius:50%;background:{{ color }}25;border:2px solid {{ color }}45;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:{{ color }};flex-shrink:0;">{{ (r.tenant_name or '?')[0].upper() }}</div>
+              <span style="font-weight:500;color:var(--text);">{{ r.tenant_name or '—' }}</span>
+            </div>
+          </td>
+          <td style="color:var(--text-dim);font-size:.82rem;">
+            {% if r.tenant %}{{ r.tenant.unit or '—' }}{% if r.tenant.unit_number %} #{{ r.tenant.unit_number }}{% endif %}{% else %}—{% endif %}
+          </td>
+          <td style="text-align:right;font-weight:600;color:var(--text);">₹{{ "{:,.0f}".format(r.rent_amount) }}</td>
+          <td style="text-align:right;color:{% if r.paid_amount %}#4ade80{% else %}var(--text-faint){% endif %};">
+            {% if r.paid_amount %}₹{{ "{:,.0f}".format(r.paid_amount) }}{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if r.status == 'Paid' %}<span class="month-pill status-paid">✓ Paid</span>
+            {% elif r.is_new_join_month() %}<span class="month-pill" style="background:rgba(59,130,246,.12);color:#60a5fa;border-color:rgba(59,130,246,.25);">🆕 New Join</span>
+            {% else %}<span class="month-pill status-pending">⏳ Pending</span>{% endif %}
+          </td>
+          <td style="color:var(--text-faint);font-size:.8rem;">{{ r.payment_date.strftime("%d %b %Y") if r.payment_date else "—" }}</td>
+          <td style="font-size:.8rem;color:var(--text-dim);">
+            {% if r.status != 'Paid' %}—
+            {% elif r.payment_method == 'cash' %}<i class="bi bi-cash-stack" style="color:#4ade80;"></i> Cash
+            {% elif r.payment_method in ['upi_screenshot','upi'] %}<i class="bi bi-phone" style="color:#60a5fa;"></i> UPI
+            {% elif r.payment_method == 'manual' %}<i class="bi bi-pencil" style="color:#a855f7;"></i> Manual
+            {% elif r.payment_method %}<i class="bi bi-building"></i> {{ r.payment_method }}
+            {% else %}—{% endif %}
+          </td>
+          <td style="font-family:monospace;font-size:.7rem;color:var(--text-faint);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.transaction_id or '' }}">
+            {% if r.status == 'Paid' %}{{ r.transaction_id or '—' }}{% else %}—{% endif %}
+          </td>
+          <td style="text-align:center;">
+            <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;">
+              {% if r.id %}
+                {% if r.status != 'Paid' %}
+                <form method="POST" action="{{ url_for('history_mark_paid', record_id=r.id) }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="method" value="cash">
+                  <button class="btn btn-success btn-sm" title="Mark Paid"><i class="bi bi-check-lg"></i> Paid</button>
+                </form>
+                {% else %}
+                <form method="POST" action="{{ url_for('history_mark_unpaid', record_id=r.id) }}" onsubmit="return confirm('Mark as unpaid?')" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-danger btn-sm" title="Mark Unpaid" style="font-size:.72rem;padding:.2rem .5rem;"><i class="bi bi-x"></i></button>
+                </form>
+                {% endif %}
+              <a href="{{ url_for('edit_rent_record', record_id=r.id) }}" class="btn btn-ghost btn-sm" title="Edit"><i class="bi bi-pencil"></i></a>
+              <form method="POST" action="{{ url_for('delete_rent_record', record_id=r.id) }}" onsubmit="return confirm('Delete this record?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-danger btn-sm" title="Delete"><i class="bi bi-trash"></i></button>
+              </form>
+              {% else %}
+              <a href="{{ url_for('add_rent_record', tenant_id=r.tenant_id, month=sel_month, year=sel_year) }}" class="btn btn-success btn-sm" title="Add payment"><i class="bi bi-plus-lg"></i> Add</a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" style="text-align:center;padding:3rem;color:var(--text-faint);">No records for {{ sel_label }}.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+function syncYear(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('yearHidden').value = opt.dataset.year || '{{ sel_year }}';
+}
+</script>
+{% endblock %}

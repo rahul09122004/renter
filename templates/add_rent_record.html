@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}{% if record %}Edit{% else %}Add{% endif %} Rent Record{% endblock %}
+{% block page_title %}{% if record %}Edit{% else %}Add{% endif %} Rent Record{% endblock %}
+{% block content %}
+<div style="max-width:580px;" class="fade-up d1">
+  <div class="card">
+    <div class="card-header">
+      <span><i class="bi bi-calendar-plus" style="margin-right:6px;color:var(--gold);"></i>
+        {% if record %}Edit Record — {{ record.tenant_name }} · {{ record.month_label() }}
+        {% else %}Add Manual Rent Record{% endif %}
+      </span>
+      <a href="{{ url_for('rent_history', month=pre_month, year=pre_year) }}" class="btn btn-ghost btn-sm">
+        <i class="bi bi-arrow-left"></i> Back
+      </a>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if not record %}
+        <!-- Tenant + Month/Year pickers (only for new records) -->
+        <div class="form-group" style="margin-bottom:1rem;">
+          <label>Tenant</label>
+          <select class="form-control" name="tenant_id" required onchange="fillRent(this)">
+            <option value="">— Select Tenant —</option>
+            {% for t in tenants %}
+            <option value="{{ t.id }}" data-amount="{{ t.amount }}"
+              {% if t.id|string == pre_tid|string %}selected{% endif %}>
+              {{ t.name }} — {{ t.unit or '' }}{% if t.unit_number %} #{{ t.unit_number }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;">
+          <div class="form-group">
+            <label>Month</label>
+            <select class="form-control" name="month" required>
+              {% for mn in range(1,13) %}
+              <option value="{{ mn }}" {% if mn == pre_month %}selected{% endif %}>
+                {{ ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][mn-1] }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Year</label>
+            <select class="form-control" name="year" required>
+              {% for yr in range(today.year, today.year - 5, -1) %}
+              <option value="{{ yr }}" {% if yr == pre_year %}selected{% endif %}>{{ yr }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        {% else %}
+        <input type="hidden" name="tenant_id" value="{{ record.tenant_id }}">
+        <input type="hidden" name="month" value="{{ record.month }}">
+        <input type="hidden" name="year" value="{{ record.year }}">
+        {% endif %}
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;">
+          <div class="form-group">
+            <label>Rent Amount (₹)</label>
+            <input class="form-control" name="rent_amount" type="number" step="0.01"
+              value="{{ record.rent_amount if record else '' }}"
+              placeholder="Monthly rent" id="rentAmtInput">
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select class="form-control" name="status" id="statusSel" onchange="togglePaid(this.value)">
+              <option value="Paid" {% if not record or record.status == 'Paid' %}selected{% endif %}>Paid</option>
+              <option value="Pending" {% if record and record.status == 'Pending' %}selected{% endif %}>Pending</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Paid fields — shown only when status=Paid -->
+        <div id="paidFields">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;">
+            <div class="form-group">
+              <label>Amount Paid (₹)</label>
+              <input class="form-control" name="paid_amount" type="number" step="0.01"
+                value="{{ record.paid_amount if record and record.paid_amount else '' }}"
+                placeholder="Actual paid">
+            </div>
+            <div class="form-group">
+              <label>Payment Date</label>
+              <input class="form-control" name="payment_date" type="date"
+                value="{{ record.payment_date.strftime('%Y-%m-%d') if record and record.payment_date else today.strftime('%Y-%m-%d') }}">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;">
+            <div class="form-group">
+              <label>Payment Method</label>
+              <select class="form-control" name="payment_method">
+                <option value="cash" {% if record and record.payment_method=='cash' %}selected{% endif %}>Cash</option>
+                <option value="upi_screenshot" {% if record and record.payment_method=='upi_screenshot' %}selected{% endif %}>UPI / Screenshot</option>
+                <option value="bank_transfer" {% if record and record.payment_method=='bank_transfer' %}selected{% endif %}>Bank Transfer</option>
+                <option value="manual" {% if record and record.payment_method=='manual' %}selected{% endif %}>Manual Entry</option>
+                <option value="neft" {% if record and record.payment_method=='neft' %}selected{% endif %}>NEFT / IMPS</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Transaction ID / Ref</label>
+              <input class="form-control" name="transaction_id"
+                value="{{ record.transaction_id if record else '' }}"
+                placeholder="UTR / UPI ref / receipt no.">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.25rem;">
+          <label>Notes <span style="font-size:.72rem;color:var(--text-faint);">(optional)</span></label>
+          <input class="form-control" name="notes"
+            value="{{ record.notes if record else '' }}"
+            placeholder="Any note about this payment">
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          <button type="submit" class="btn btn-gold" style="flex:1;justify-content:center;">
+            <i class="bi bi-check-lg"></i> {% if record %}Save Changes{% else %}Save Record{% endif %}
+          </button>
+          <a href="{{ url_for('rent_history', month=pre_month, year=pre_year) }}" class="btn btn-ghost">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+function togglePaid(val) {
+  document.getElementById('paidFields').style.display = val === 'Paid' ? 'block' : 'none';
+}
+function fillRent(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  const amt = opt.dataset.amount;
+  if (amt) document.getElementById('rentAmtInput').value = amt;
+}
+togglePaid(document.getElementById('statusSel').value);
+</script>
+{% endblock %}

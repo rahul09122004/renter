@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}Verify Payment — {{ tenant.name }}{% endblock %}
+{% block page_title %}Verify Payment{% endblock %}
+{% block extra_styles %}
+.method-tab { border: 2px solid var(--border); border-radius: var(--radius-lg); padding: 1rem 1.25rem; cursor: pointer; transition: all .2s; background: var(--surface); display: flex; align-items: center; gap: 10px; }
+.method-tab:hover { border-color: var(--border2); }
+.method-tab.active { border-color: var(--gold); background: var(--gold-glow); }
+.method-tab input[type=radio] { display: none; }
+.drop-zone { border: 2px dashed var(--border2); border-radius: var(--radius-lg); padding: 2.5rem 1.5rem; text-align: center; cursor: pointer; transition: all .2s; background: var(--surface2); }
+.drop-zone.dragover { border-color: var(--gold); background: var(--gold-glow); }
+.drop-zone.has-file { border-color: #4ade80; background: var(--green-bg); }
+.preview-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.preview-thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;" class="fade-up d1">
+
+  <!-- Tenant strip -->
+  <div class="card" style="margin-bottom:1.25rem;border-color:rgba(232,160,32,.25);">
+    <div class="card-body" style="padding:1rem 1.4rem;display:flex;align-items:center;gap:14px;">
+      <div style="width:44px;height:44px;border-radius:50%;background:var(--gold-glow);border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:700;color:var(--gold);flex-shrink:0;">
+        {{ tenant.name[0].upper() }}
+      </div>
+      <div style="flex:1;">
+        <div style="font-weight:600;color:var(--text);font-size:.95rem;">{{ tenant.name }}</div>
+        <div style="font-size:.78rem;color:var(--text-faint);">
+          {{ tenant.unit or '' }}{% if tenant.unit_number %} #{{ tenant.unit_number }}{% endif %}
+          · Due: {{ tenant.get_due_day() }}th of every month
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:1.3rem;font-weight:700;color:var(--gold);">₹{{ "{:,.0f}".format(tenant.amount) }}</div>
+        <div style="font-size:.72rem;color:var(--text-faint);">Monthly Rent</div>
+      </div>
+    </div>
+  </div>
+
+  {% if not ocr %}
+  <!-- ── Payment method tabs ── -->
+  <div class="card">
+    <div class="card-header">
+      <span><i class="bi bi-credit-card" style="margin-right:6px;color:var(--gold);"></i>Payment Method</span>
+      <a href="{{ url_for('rent_tracker') }}" class="btn btn-ghost btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
+    <div class="card-body">
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem;margin-bottom:1.5rem;">
+        <label class="method-tab active" id="tab-screenshot" onclick="switchTab('screenshot')">
+          <input type="radio" name="tab_sel" value="screenshot" checked>
+          <div style="font-size:1.3rem;">📸</div>
+          <div>
+            <div style="font-weight:600;font-size:.85rem;color:var(--text);">Screenshot</div>
+            <div style="font-size:.72rem;color:var(--text-dim);">OCR auto-read</div>
+          </div>
+        </label>
+        <label class="method-tab" id="tab-manual" onclick="switchTab('manual')">
+          <input type="radio" name="tab_sel" value="manual">
+          <div style="font-size:1.3rem;">✏️</div>
+          <div>
+            <div style="font-weight:600;font-size:.85rem;color:var(--text);">Manual</div>
+            <div style="font-size:.72rem;color:var(--text-dim);">Type amount & TID</div>
+          </div>
+        </label>
+        <label class="method-tab" id="tab-cash" onclick="switchTab('cash')">
+          <input type="radio" name="tab_sel" value="cash">
+          <div style="font-size:1.3rem;">💵</div>
+          <div>
+            <div style="font-weight:600;font-size:.85rem;color:var(--text);">Cash</div>
+            <div style="font-size:.72rem;color:var(--text-dim);">Direct payment</div>
+          </div>
+        </label>
+      </div>
+
+      <!-- ── Screenshot form ── -->
+      <div id="form-screenshot">
+        <form method="POST" enctype="multipart/form-data" id="screenshotForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="method" value="screenshot">
+
+          <div class="drop-zone" id="dropZone" onclick="document.getElementById('screenshotInput').click()">
+            <div id="dropText">
+              <i class="bi bi-cloud-upload" style="font-size:2rem;color:var(--gold);display:block;margin-bottom:.75rem;"></i>
+              <div style="font-weight:500;color:var(--text);margin-bottom:.3rem;">Click or drag & drop screenshots here</div>
+              <div style="font-size:.78rem;color:var(--text-faint);">Multiple images supported · JPG, PNG · PhonePe, GPay, Paytm, IMPS, NEFT</div>
+            </div>
+            <div id="previewGrid" class="preview-grid" style="justify-content:center;display:none;"></div>
+            <div id="fileCount" style="margin-top:8px;font-size:.8rem;color:var(--text-dim);display:none;"></div>
+            <input type="file" name="screenshot" id="screenshotInput" accept="image/*,.pdf" style="display:none;" multiple onchange="handleFiles(this.files)">
+          </div>
+
+          <div class="form-group" style="margin:.9rem 0 .75rem;">
+            <label style="font-size:.82rem;">Transaction ID <span style="font-size:.72rem;color:var(--text-faint);">(optional — auto-filled by OCR)</span></label>
+            <input class="form-control" name="transaction_id" id="txnInput" placeholder="UPI Ref / UTR / Transaction ID">
+          </div>
+
+          <button type="submit" class="btn btn-gold" id="scanBtn" style="width:100%;justify-content:center;padding:.7rem;">
+            <i class="bi bi-search"></i> Scan & Verify Payment
+          </button>
+        </form>
+      </div>
+
+      <!-- ── Manual entry form ── -->
+      <div id="form-manual" style="display:none;">
+        <form method="POST" id="manualForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="method" value="manual">
+          <div class="form-group" style="margin-bottom:1rem;">
+            <label>Amount Paid <span style="font-size:.72rem;color:var(--text-faint);">(₹)</span></label>
+            <input class="form-control" name="manual_amount" type="number" step="0.01"
+              placeholder="{{ '{:,.0f}'.format(tenant.amount) }}" style="font-size:1.1rem;font-weight:600;">
+          </div>
+          <div class="form-group" style="margin-bottom:1.25rem;">
+            <label>Transaction ID / Reference</label>
+            <input class="form-control" name="transaction_id" placeholder="UPI Ref / UTR / Bank Ref">
+          </div>
+          <button type="submit" class="btn btn-success" style="width:100%;justify-content:center;padding:.7rem;">
+            <i class="bi bi-check-lg"></i> Confirm as Paid
+          </button>
+        </form>
+      </div>
+
+      <!-- ── Cash form ── -->
+      <div id="form-cash" style="display:none;">
+        <form method="POST" id="cashForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="method" value="cash">
+          <div class="form-group" style="margin-bottom:1rem;">
+            <label>Receipt / Reference <span style="font-size:.72rem;color:var(--text-faint);">(optional)</span></label>
+            <input class="form-control" name="transaction_id" placeholder="e.g. Hand receipt #12, or leave blank">
+          </div>
+          <button type="submit" class="btn btn-success" style="width:100%;justify-content:center;padding:.7rem;">
+            <i class="bi bi-check-lg"></i> Confirm Cash — ₹{{ "{:,.0f}".format(tenant.amount) }}
+          </button>
+        </form>
+      </div>
+
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ── OCR Result screen ── -->
+  {% if ocr %}
+  <div class="card fade-up d1" style="border-color:rgba(99,102,241,.25);">
+    <div class="card-header" style="border-color:rgba(99,102,241,.2);">
+      <span><i class="bi bi-search" style="margin-right:6px;color:#818cf8;"></i>OCR Scan Result</span>
+      <span class="badge" style="background:rgba(99,102,241,.12);color:#818cf8;border:1px solid rgba(99,102,241,.25);">Review &amp; Confirm</span>
+    </div>
+    <div class="card-body">
+
+      <!-- Detected values -->
+      <div class="mob-stack" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem;">
+        <div style="background:var(--surface2);border-radius:10px;padding:.9rem 1rem;">
+          <div style="font-size:.68rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;">Detected Amount</div>
+          <div style="font-size:1.4rem;font-weight:700;margin-top:4px;color:{% if ocr.amount %}#4ade80{% else %}#f87171{% endif %};">
+            {% if ocr.amount %}₹{{ "{:,.0f}".format(ocr.amount) }}{% else %}<span style="font-size:.9rem;color:#f87171;">Not detected</span>{% endif %}
+          </div>
+        </div>
+        <div style="background:var(--surface2);border-radius:10px;padding:.9rem 1rem;">
+          <div style="font-size:.68rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;">Transaction ID</div>
+          <div style="font-size:.88rem;font-weight:600;margin-top:4px;color:var(--text);font-family:monospace;word-break:break-all;">
+            {{ ocr.txn_id or '—' }}
+          </div>
+        </div>
+      </div>
+
+      {% if ocr.raw_text %}
+      <details style="margin-bottom:1.1rem;">
+        <summary style="font-size:.78rem;color:var(--text-faint);cursor:pointer;"><i class="bi bi-file-text" style="margin-right:5px;"></i>View raw OCR text</summary>
+        <pre style="margin-top:.5rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.75rem;font-size:.72rem;color:var(--text-dim);overflow-x:auto;white-space:pre-wrap;">{{ ocr.raw_text }}</pre>
+      </details>
+      {% endif %}
+
+      <!-- Confirm form — editable amount + TID -->
+      <div style="background:var(--surface2);border-radius:10px;padding:1rem;border:1px solid var(--border);">
+        <div style="font-size:.8rem;color:var(--text-dim);margin-bottom:.9rem;">
+          <i class="bi bi-pencil-square" style="margin-right:5px;color:#818cf8;"></i>
+          Edit the values if OCR is wrong, then confirm.
+        </div>
+        <form method="POST" action="{{ url_for('force_mark_paid', tid=tenant.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="method" value="upi_screenshot">
+          <input type="hidden" name="screenshot_fn" value="{{ screenshot_fn or '' }}">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.9rem;">
+            <div class="form-group">
+              <label style="font-size:.78rem;">Amount Paid (₹)</label>
+              <input class="form-control" name="manual_amount" type="number" step="0.01"
+                value="{{ ocr.amount|int if ocr.amount else '' }}"
+                placeholder="{{ '{:,.0f}'.format(tenant.amount) }}"
+                style="font-size:1rem;font-weight:600;">
+            </div>
+            <div class="form-group">
+              <label style="font-size:.78rem;">Transaction ID</label>
+              <input class="form-control" name="transaction_id"
+                value="{{ ocr.txn_id or '' }}" placeholder="UPI Ref / UTR">
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button type="submit" class="btn btn-success" style="flex:1;justify-content:center;">
+              <i class="bi bi-check-lg"></i> Confirm as Paid
+            </button>
+            <a href="{{ url_for('verify_payment', tid=tenant.id) }}" class="btn btn-ghost">
+              <i class="bi bi-arrow-counterclockwise"></i> Rescan
+            </a>
+            <a href="{{ url_for('rent_tracker') }}" class="btn btn-ghost">Cancel</a>
+          </div>
+        </form>
+      </div>
+
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function switchTab(tab) {
+  ['screenshot','manual','cash'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+    document.getElementById('form-' + t).style.display = t === tab ? 'block' : 'none';
+  });
+}
+
+function handleFiles(files) {
+  if (!files.length) return;
+  const zone = document.getElementById('dropZone');
+  zone.classList.add('has-file');
+  document.getElementById('dropText').style.display = 'none';
+
+  const grid = document.getElementById('previewGrid');
+  grid.innerHTML = '';
+  grid.style.display = 'flex';
+
+  Array.from(files).forEach(file => {
+    if (file.type.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.className = 'preview-thumb';
+      const reader = new FileReader();
+      reader.onload = e => img.src = e.target.result;
+      reader.readAsDataURL(file);
+      grid.appendChild(img);
+    }
+  });
+
+  const count = document.getElementById('fileCount');
+  count.style.display = 'block';
+  count.textContent = files.length + ' file' + (files.length > 1 ? 's' : '') + ' selected';
+}
+
+// Drag & drop
+const dz = document.getElementById('dropZone');
+if (dz) {
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('dragover');
+    const inp = document.getElementById('screenshotInput');
+    if (e.dataTransfer.files.length) {
+      inp.files = e.dataTransfer.files;
+      handleFiles(e.dataTransfer.files);
+    }
+  });
+}
+
+// Submit guard
+const sf = document.getElementById('screenshotForm');
+if (sf) sf.addEventListener('submit', function(e) {
+  const inp = document.getElementById('screenshotInput');
+  if (!inp || !inp.files.length) { e.preventDefault(); alert('Please select at least one screenshot.'); return; }
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Scanning…';
+});
+</script>
+{% endblock %}

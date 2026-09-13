@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+{% block title %}{{ tenant.name }} — RentManager{% endblock %}
+{% block page_title %}Renter Detail{% endblock %}
+{% block extra_styles %}
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.8); z-index:400; align-items:center; justify-content:center; backdrop-filter:blur(6px); }
+.modal-overlay.open { display:flex; }
+.modal-box { background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius-lg); padding:1.5rem; max-width:520px; width:90%; max-height:90vh; overflow-y:auto; animation:fadeUp .25s ease; }
+{% endblock %}
+{% block content %}
+{% set colors = ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
+{% set color = colors[tenant.id % 7] %}
+
+<!-- Header -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;" class="fade-up d1">
+  <div style="display:flex;align-items:center;gap:10px;">
+    <a href="{{ url_for('renters') }}" class="btn btn-ghost btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <div style="width:38px;height:38px;border-radius:50%;background:{{ color }}20;border:2px solid {{ color }}50;display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:700;color:{{ color }};">{{ tenant.name[0].upper() }}</div>
+    <div>
+      <div style="font-size:1rem;font-weight:700;color:var(--text);">{{ tenant.name }}</div>
+      <div style="display:flex;gap:5px;margin-top:2px;">
+        {% if tenant.unit %}<span style="background:{{ color }}18;color:{{ color }};border:1px solid {{ color }}35;padding:.1rem .55rem;border-radius:20px;font-size:.72rem;font-weight:600;">{{ tenant.unit }}{% if tenant.unit_number %} #{{ tenant.unit_number }}{% endif %}</span>{% endif %}
+        {% if tenant.occupancy_status == 'Vacated' %}<span class="badge b-overdue">Vacated</span>
+        {% elif tenant.status == 'Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
+        {% elif today and tenant.is_join_month(today.month, today.year) %}<span class="badge" style="background:var(--blue-bg);color:#60a5fa;border:1px solid rgba(59,130,246,.2);"><span class="b-dot" style="background:#60a5fa"></span>New Join</span>
+        {% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;">
+    {% if tenant.status == 'Paid' %}
+    <form method="POST" action="{{ url_for('mark_unpaid', tid=tenant.id) }}" onsubmit="return confirm('Mark {{ tenant.name }} as unpaid? Payment record will be cleared.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-danger btn-sm"><i class="bi bi-x-circle"></i> Mark Unpaid</button>
+    </form>
+    {% else %}
+    <a href="{{ url_for('verify_payment', tid=tenant.id) }}" class="btn btn-success btn-sm"><i class="bi bi-check-lg"></i> Mark Paid</a>
+    {% endif %}
+    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('editPaymentModal').classList.add('open')"><i class="bi bi-pencil-square"></i> Edit Payment</button>
+    <a href="{{ url_for('update_rent_amount', tid=tenant.id) }}" class="btn btn-ghost btn-sm" style="color:var(--gold);border-color:var(--gold);"><i class="bi bi-currency-rupee"></i> Update Rent/Deposit</a>
+    <a href="{{ url_for('edit_renter', tid=tenant.id) }}" class="btn btn-gold btn-sm"><i class="bi bi-person-gear"></i> Edit Profile</a>
+    {% if tenant.occupancy_status != 'Vacated' %}
+    <a href="{{ url_for('vacate_renter', tid=tenant.id) }}" class="btn btn-ghost btn-sm" style="color:#f87171;border-color:rgba(239,68,68,.3);" onclick="return confirm('Proceed to vacate settlement for {{ tenant.name }}?')"><i class="bi bi-box-arrow-right"></i> Vacate</a>
+    {% endif %}
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;" class="fade-up d2">
+  <!-- Personal Info -->
+  <div class="card">
+    <div class="card-header"><span><i class="bi bi-person" style="margin-right:6px;color:{{ color }};"></i>Personal Info</span></div>
+    <div class="card-body" style="padding:0;">
+      <table>
+        <tbody>
+          <tr><td style="color:var(--text-faint);width:130px;padding:.6rem 1rem;">Full Name</td><td style="font-weight:500;color:var(--text);padding:.6rem 1rem;">{{ tenant.name }}</td></tr>
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Phone</td><td style="padding:.6rem 1rem;"><a href="tel:{{ tenant.phone }}" style="color:#4ade80;">{{ tenant.phone }}</a></td></tr>
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Unit</td><td style="padding:.6rem 1rem;">{% if tenant.unit %}<span style="background:{{ color }}18;color:{{ color }};border:1px solid {{ color }}35;padding:.15rem .55rem;border-radius:6px;font-size:.78rem;font-weight:600;">{{ tenant.unit }}</span>{% if tenant.unit_number %} <span style="color:var(--text-dim);font-size:.82rem;">#{{ tenant.unit_number }}</span>{% endif %}{% else %}—{% endif %}</td></tr>
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Joined</td><td style="color:var(--text-dim);padding:.6rem 1rem;">{{ tenant.join_date.strftime("%d %b %Y") if tenant.join_date else '—' }}</td></tr>
+          {% if tenant.occupancy_status == 'Vacated' %}
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Vacated</td><td style="color:#f87171;padding:.6rem 1rem;">{{ tenant.vacated_date.strftime("%d %b %Y") if tenant.vacated_date else '—' }}</td></tr>
+          {% endif %}
+          {% if tenant.notes %}
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Notes</td><td style="color:var(--text-dim);font-size:.82rem;padding:.6rem 1rem;">{{ tenant.notes }}</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Rent & Payment -->
+  <div class="card">
+    <div class="card-header"><span><i class="bi bi-currency-rupee" style="margin-right:6px;color:var(--gold);"></i>Rent & Payment</span></div>
+    <div class="card-body" style="padding:0;">
+      <table>
+        <tbody>
+          <tr><td style="color:var(--text-faint);width:130px;padding:.6rem 1rem;">Monthly Rent</td><td style="font-weight:700;color:var(--gold);font-size:1rem;padding:.6rem 1rem;">₹{{ "{:,.0f}".format(tenant.amount) }}</td></tr>
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Deposit</td><td style="color:var(--text-dim);padding:.6rem 1rem;">₹{{ "{:,.0f}".format(tenant.deposit or 0) }}</td></tr>
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Due Date</td><td style="color:var(--text-dim);padding:.6rem 1rem;">{{ tenant.get_due_day() }}th of every month</td></tr>
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Status</td><td style="padding:.6rem 1rem;">
+            {% if tenant.status=='Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
+            {% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}
+          </td></tr>
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Paid On</td><td style="color:{% if tenant.payment_date %}#4ade80{% else %}var(--text-faint){% endif %};padding:.6rem 1rem;">{{ tenant.payment_date.strftime("%d %b %Y") if tenant.payment_date else '—' }}</td></tr>
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Method</td><td style="color:var(--text-dim);padding:.6rem 1rem;">
+            {% if tenant.status != 'Paid' %}—
+            {% elif tenant.payment_method == 'cash' %}<i class="bi bi-cash-stack" style="color:var(--green);margin-right:5px;"></i>Cash
+            {% elif tenant.payment_method == 'upi_screenshot' %}<i class="bi bi-phone" style="color:var(--blue);margin-right:5px;"></i>UPI Screenshot
+            {% else %}{{ tenant.payment_method or '—' }}{% endif %}
+          </td></tr>
+          {% if tenant.status == 'Paid' and tenant.transaction_id and tenant.transaction_id != 'Cash' %}
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Txn ID</td><td style="font-family:monospace;font-size:.75rem;color:var(--text-dim);padding:.6rem 1rem;">{{ tenant.transaction_id }}</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Documents -->
+<div class="card fade-up d3" style="margin-bottom:1rem;">
+  <div class="card-header"><span><i class="bi bi-paperclip" style="margin-right:6px;color:var(--text-faint);"></i>Documents</span></div>
+  <div class="card-body" style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start;">
+
+    <!-- Photo -->
+    <div style="display:flex;flex-direction:column;gap:.4rem;">
+      <div style="font-size:.75rem;color:var(--text-faint);font-weight:600;letter-spacing:.04em;">PROFILE PHOTO</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;">
+        {% if tenant.photo_path %}
+        <a href="{{ tenant.photo_path if tenant.photo_path.startswith('http') else '/static/uploads/' + tenant.photo_path }}" target="_blank" class="btn btn-ghost btn-sm"><i class="bi bi-person-square" style="color:var(--blue);"></i> View</a>
+        {% endif %}
+        <!-- Change / Add photo -->
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('photoUploadForm').style.display=document.getElementById('photoUploadForm').style.display==='none'?'block':'none'" style="color:var(--gold);">
+          <i class="bi bi-pencil"></i> {{ 'Change' if tenant.photo_path else 'Add' }}
+        </button>
+        {% if tenant.photo_path %}
+        <form method="POST" action="{{ url_for('delete_renter_file', tid=tenant.id, field='photo') }}" onsubmit="return confirm('Remove profile photo?')" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost btn-sm" style="color:#f87171;"><i class="bi bi-trash"></i> Delete</button>
+        </form>
+        {% endif %}
+      </div>
+      <div id="photoUploadForm" style="display:none;margin-top:.3rem;">
+        <form method="POST" action="{{ url_for('edit_renter', tid=tenant.id) }}" enctype="multipart/form-data" style="display:flex;gap:.5rem;align-items:center;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="_photo_only" value="1">
+          <input type="file" name="photo" accept="image/*,.pdf" class="form-control" style="font-size:.8rem;padding:.3rem .5rem;max-width:220px;">
+          <button class="btn btn-sm" style="background:var(--gold);color:#000;font-weight:600;">Upload</button>
+        </form>
+      </div>
+    </div>
+
+    <div style="width:1px;background:var(--border);align-self:stretch;"></div>
+
+    <!-- Agreement -->
+    <div style="display:flex;flex-direction:column;gap:.4rem;">
+      <div style="font-size:.75rem;color:var(--text-faint);font-weight:600;letter-spacing:.04em;">AGREEMENT</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;">
+        {% if tenant.agreement_path %}
+        <a href="{{ tenant.agreement_path if tenant.agreement_path.startswith('http') else '/static/uploads/' + tenant.agreement_path }}" target="_blank" class="btn btn-ghost btn-sm"><i class="bi bi-file-earmark-text" style="color:var(--green);"></i> View</a>
+        {% endif %}
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('agreementUploadForm').style.display=document.getElementById('agreementUploadForm').style.display==='none'?'block':'none'" style="color:var(--gold);">
+          <i class="bi bi-pencil"></i> {{ 'Change' if tenant.agreement_path else 'Add' }}
+        </button>
+        {% if tenant.agreement_path %}
+        <form method="POST" action="{{ url_for('delete_renter_file', tid=tenant.id, field='agreement') }}" onsubmit="return confirm('Remove agreement file?')" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost btn-sm" style="color:#f87171;"><i class="bi bi-trash"></i> Delete</button>
+        </form>
+        {% endif %}
+      </div>
+      <div id="agreementUploadForm" style="display:none;margin-top:.3rem;">
+        <form method="POST" action="{{ url_for('edit_renter', tid=tenant.id) }}" enctype="multipart/form-data" style="display:flex;gap:.5rem;align-items:center;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="_agreement_only" value="1">
+          <input type="file" name="agreement" accept="image/*,.pdf" class="form-control" style="font-size:.8rem;padding:.3rem .5rem;max-width:220px;">
+          <button class="btn btn-sm" style="background:var(--gold);color:#000;font-weight:600;">Upload</button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- Vacate Settlement (shown if vacated) -->
+{% if tenant.occupancy_status == 'Vacated' and settlement %}
+<div class="card fade-up d3" style="margin-bottom:1rem;border-color:rgba(239,68,68,.25);">
+  <div class="card-header" style="background:rgba(239,68,68,.06);">
+    <span><i class="bi bi-box-arrow-right" style="margin-right:6px;color:#f87171;"></i>Deposit Settlement</span>
+    <a href="{{ url_for('vacate_renter', tid=tenant.id) }}" class="btn btn-ghost btn-sm" style="font-size:.75rem;">Edit</a>
+  </div>
+  <div class="card-body" style="padding:0;">
+    <table>
+      <tbody>
+        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;width:180px;">Deposit Held</td><td style="color:#60a5fa;font-weight:600;padding:.5rem 1rem;">₹{{ "{:,.0f}".format(settlement.deposit_held or 0) }}</td></tr>
+        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Repair — Charged / Actual Spend</td><td style="padding:.5rem 1rem;">₹{{ "{:,.0f}".format(settlement.repair_cost or 0) }} / ₹{{ "{:,.0f}".format(settlement.repair_actual_cost or 0) }}</td></tr>
+        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Painting — Charged / Actual Spend</td><td style="padding:.5rem 1rem;">₹{{ "{:,.0f}".format(settlement.other_deduction or 0) }} / ₹{{ "{:,.0f}".format(settlement.other_actual_cost or 0) }}</td></tr>
+        {% if settlement.profit_kept() > 0 %}
+        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Profit Kept</td><td style="color:#a78bfa;font-weight:600;padding:.5rem 1rem;">₹{{ "{:,.0f}".format(settlement.profit_kept()) }}</td></tr>
+        {% endif %}
+        {% if settlement.pending_rent_deducted %}
+        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Unpaid Rent Recovered</td><td style="color:#f87171;padding:.5rem 1rem;">− ₹{{ "{:,.0f}".format(settlement.pending_rent_deducted) }}</td></tr>
+        {% endif %}
+        {% if settlement.deduction_notes %}
+        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Notes</td><td style="color:var(--text-dim);font-size:.82rem;padding:.5rem 1rem;">{{ settlement.deduction_notes }}</td></tr>
+        {% endif %}
+        <tr style="border-top:2px solid var(--border2);background:var(--surface2);">
+          <td style="font-weight:700;color:var(--text);padding:.65rem 1rem;">Amount to Return</td>
+          <td style="font-weight:700;color:#4ade80;font-size:1rem;padding:.65rem 1rem;">₹{{ "{:,.0f}".format(settlement.return_amount or 0) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% elif tenant.occupancy_status != 'Vacated' %}
+<div style="margin-bottom:1rem;" class="fade-up d3">
+  <a href="{{ url_for('vacate_renter', tid=tenant.id) }}" class="btn btn-ghost btn-sm" style="color:#f87171;border-color:rgba(239,68,68,.3);"><i class="bi bi-box-arrow-right" style="margin-right:5px;"></i>Process Vacate &amp; Deposit Settlement</a>
+</div>
+{% endif %}
+
+<!-- Monthly Rent History -->
+<!-- Payment summary for vacated tenants -->
+{% if tenant.occupancy_status == 'Vacated' and records %}
+{% set paid_records = records | selectattr('status', 'equalto', 'Paid') | list %}
+{% set total_rent = records | sum(attribute='rent_amount') %}
+{% set total_paid = paid_records | sum(attribute='paid_amount') %}
+{% set pending_count = records | rejectattr('status', 'equalto', 'Paid') | list | length %}
+<div class="card fade-up d3" style="margin-bottom:1rem;border-color:rgba(251,191,36,.2);background:rgba(251,191,36,.04);">
+  <div class="card-header" style="background:rgba(251,191,36,.06);">
+    <span><i class="bi bi-wallet2" style="margin-right:6px;color:var(--gold);"></i>Payment Summary</span>
+  </div>
+  <div class="card-body" style="display:flex;gap:2rem;flex-wrap:wrap;padding:.75rem 1rem;">
+    <div style="text-align:center;">
+      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">TOTAL MONTHS</div>
+      <div style="font-size:1.4rem;font-weight:700;color:var(--text);">{{ records|length }}</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">MONTHS PAID</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#4ade80;">{{ paid_records|length }}</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">PENDING</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#fbbf24;">{{ pending_count }}</div>
+    </div>
+    <div style="border-left:1px solid var(--border);padding-left:2rem;text-align:center;">
+      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">TOTAL BILLED</div>
+      <div style="font-size:1.4rem;font-weight:700;color:var(--text);">₹{{ "{:,.0f}".format(total_rent) }}</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">TOTAL COLLECTED</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#4ade80;">₹{{ "{:,.0f}".format(total_paid) }}</div>
+    </div>
+    {% if total_rent > total_paid %}
+    <div style="text-align:center;">
+      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">OUTSTANDING</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#f87171;">₹{{ "{:,.0f}".format(total_rent - total_paid) }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="data-table-wrap fade-up d3" style="margin-bottom:1rem;">
+  <div class="table-controls">
+    <div class="table-title"><i class="bi bi-calendar-month" style="margin-right:6px;color:var(--gold);"></i>Monthly Rent History</div>
+    {% if tenant.occupancy_status != 'Vacated' %}
+    <a href="{{ url_for('add_rent_record', tenant_id=tenant.id) }}" class="btn btn-ghost btn-sm"><i class="bi bi-plus-lg"></i> Add Record</a>
+    {% endif %}
+  </div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead><tr><th>Month</th><th style="text-align:right;">Rent</th><th style="text-align:right;">Paid</th><th>Status</th><th>Paid On</th><th>Method</th><th>Txn ID</th><th style="text-align:center;">Receipt</th><th style="text-align:center;">Edit</th></tr></thead>
+      <tbody>
+        {% for r in records %}
+        <tr>
+          <td style="font-weight:500;color:var(--text);">{{ r.month_label() }}</td>
+          <td style="text-align:right;color:var(--text-dim);">₹{{ "{:,.0f}".format(r.rent_amount) }}</td>
+          <td style="text-align:right;color:{% if r.paid_amount %}#4ade80{% else %}var(--text-faint){% endif %};">{% if r.paid_amount %}₹{{ "{:,.0f}".format(r.paid_amount) }}{% else %}—{% endif %}</td>
+          <td>{% if r.status == 'Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>{% elif r.is_new_join_month() %}<span class="badge" style="background:var(--blue-bg);color:#60a5fa;border:1px solid rgba(59,130,246,.2);"><span class="b-dot" style="background:#60a5fa"></span>New Join</span>{% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}</td>
+          <td style="font-size:.8rem;color:var(--text-faint);">{{ r.payment_date.strftime("%d %b %Y") if r.payment_date else "—" }}</td>
+          <td style="font-size:.8rem;color:var(--text-dim);">{% if r.status != 'Paid' %}—{% elif r.payment_method == 'cash' %}<i class="bi bi-cash-stack" style="color:#4ade80;"></i> Cash{% elif r.payment_method in ['upi_screenshot','upi'] %}<i class="bi bi-phone" style="color:#60a5fa;"></i> UPI{% elif r.payment_method %}<i class="bi bi-pencil"></i> {{ r.payment_method }}{% else %}—{% endif %}</td>
+          <td style="font-family:monospace;font-size:.7rem;color:var(--text-faint);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.transaction_id or '' }}">{% if r.status == 'Paid' %}{{ r.transaction_id or "—" }}{% else %}—{% endif %}</td>
+          <td style="text-align:center;">
+            {% if r.status == 'Paid' and r.payment_screenshot %}
+            <button onclick="toggleScreenshot('ss_{{ r.id }}')" class="btn btn-ghost btn-sm" title="View payment screenshot" style="color:var(--blue);">
+              <i class="bi bi-image"></i>
+            </button>
+            {% else %}—{% endif %}
+          </td>
+          <td style="text-align:center;"><a href="{{ url_for('edit_rent_record', record_id=r.id) }}" class="btn btn-ghost btn-sm"><i class="bi bi-pencil"></i></a></td>
+        </tr>
+        {% if r.status == 'Paid' and r.payment_screenshot %}
+        <tr id="ss_{{ r.id }}" style="display:none;">
+          <td colspan="9" style="text-align:center;background:var(--surface2);padding:1rem 1.5rem;border-top:1px solid var(--border);">
+            <img src="{{ r.payment_screenshot if r.payment_screenshot.startswith('http') else '/static/uploads/' + r.payment_screenshot }}"
+                 alt="Payment screenshot"
+                 style="max-height:300px;max-width:100%;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;"
+                 onclick="window.open('{{ r.payment_screenshot if r.payment_screenshot.startswith('http') else '/static/uploads/' + r.payment_screenshot }}','_blank')"
+                 title="Click to open full size">
+            {% if r.transaction_id %}
+            <div style="margin-top:.5rem;font-size:.75rem;color:var(--text-faint);font-family:monospace;">
+              <i class="bi bi-upc-scan" style="margin-right:4px;"></i>Txn: {{ r.transaction_id }}
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endif %}
+        {% else %}
+        <tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--text-faint);">No history records yet. <a href="{{ url_for('add_rent_record', tenant_id=tenant.id) }}" style="color:var(--gold);">Add one</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<!-- Reminder History -->
+<div class="data-table-wrap fade-up d4">
+  <div class="table-controls">
+    <div class="table-title"><i class="bi bi-clock-history" style="margin-right:6px;color:var(--text-faint);"></i>Reminder & Payment History</div>
+    <div style="display:flex;gap:6px;">
+      <form method="POST" action="{{ url_for('remind_tenant', tid=tenant.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="channel" value="whatsapp">
+        <button class="btn btn-ghost btn-sm" style="color:#4ade80;border-color:rgba(34,197,94,.25);"><i class="bi bi-whatsapp"></i> WhatsApp</button>
+      </form>
+      <form method="POST" action="{{ url_for('remind_tenant', tid=tenant.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="channel" value="sms">
+        <button class="btn btn-ghost btn-sm" style="color:#60a5fa;border-color:rgba(59,130,246,.25);"><i class="bi bi-chat-dots"></i> SMS</button>
+      </form>
+    </div>
+  </div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead><tr><th>Date & Time</th><th>Channel</th><th>Status</th><th>Message</th></tr></thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td style="font-size:.78rem;color:var(--text-faint);white-space:nowrap;">{{ log.sent_at.strftime("%d %b %Y %H:%M") if log.sent_at else "—" }}</td>
+          <td>
+            {% if log.channel == 'whatsapp' %}<span style="color:#4ade80;font-size:.8rem;"><i class="bi bi-whatsapp" style="margin-right:4px;"></i>WhatsApp</span>
+            {% elif log.channel == 'sms' %}<span style="color:#60a5fa;font-size:.8rem;"><i class="bi bi-chat-dots" style="margin-right:4px;"></i>SMS</span>
+            {% else %}<span style="color:var(--text-faint);font-size:.8rem;">{{ log.channel }}</span>{% endif %}
+          </td>
+          <td>{% if log.status == 'sent' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Sent</span>
+          {% else %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Failed</span>{% endif %}</td>
+          <td style="font-size:.78rem;color:var(--text-faint);">{{ log.message or "—" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--text-faint);">No history yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Edit Payment Modal -->
+<div class="modal-overlay" id="editPaymentModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
+      <div style="font-weight:600;color:var(--text);">Edit Payment Details</div>
+      <button onclick="document.getElementById('editPaymentModal').classList.remove('open')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.2rem;"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <form method="POST" action="{{ url_for('force_mark_paid', tid=tenant.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group" style="margin-bottom:1rem;">
+        <label>Payment Method</label>
+        <select class="form-control" name="method">
+          <option value="cash" {% if tenant.payment_method=='cash' %}selected{% endif %}>Cash</option>
+          <option value="upi_screenshot" {% if tenant.payment_method=='upi_screenshot' %}selected{% endif %}>UPI / Screenshot</option>
+          <option value="bank_transfer" {% if tenant.payment_method=='bank_transfer' %}selected{% endif %}>Bank Transfer</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:1rem;">
+        <label>Transaction ID / Reference</label>
+        <input class="form-control" name="transaction_id" value="{{ tenant.transaction_id or '' }}" placeholder="UPI ref / UTR / Cash receipt no.">
+      </div>
+      <div class="form-group" style="margin-bottom:1.25rem;">
+        <label>Screenshot filename (if already uploaded)</label>
+        <input class="form-control" name="screenshot_fn" value="{{ tenant.payment_screenshot or '' }}" placeholder="Leave blank to keep existing">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button type="submit" class="btn btn-gold"><i class="bi bi-check-lg"></i> Save Payment</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('editPaymentModal').classList.remove('open')">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function toggleScreenshot(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'table-row' : 'none';
+}
+</script>
+{% endblock %}

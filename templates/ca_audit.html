@@ -1,0 +1,740 @@
+{% extends "base.html" %}
+{% block title %}CA Audit — RentManager{% endblock %}
+{% block page_title %}CA Audit{% endblock %}
+
+{# ═══════════════════════════════════════════════════════════════
+   ALL TOTALS — defined OUTSIDE all blocks so they are visible
+   in both {% block content %} and {% block extra_scripts %}.
+   Use namespace only for loop accumulation, then extract to
+   plain scalars — safe in format(), if/else, and JS output.
+══════════════════════════════════════════════════════════════════ #}
+
+{# — Monthly income (rent + deposit profit from vacate settlements) — #}
+{% set _a = namespace(v=0) %}
+{% for r in rent_records %}{% if r.status == 'Paid' %}{% set _a.v = _a.v + r.rent_amount %}{% endif %}{% endfor %}
+{% set rent_income = _a.v %}
+{% set deposit_profit = deposit_profit or 0 %}
+{% set total_income = rent_income + deposit_profit %}
+
+{# — Monthly pending — #}
+{% set _b = namespace(v=0) %}
+{% for r in rent_records %}{% if r.status != 'Paid' %}{% set _b.v = _b.v + r.rent_amount %}{% endif %}{% endfor %}
+{% set total_pending = _b.v %}
+
+{# — Monthly expenses — #}
+{% set total_common   = common|sum(attribute='amount') %}
+{% set total_building = building|sum(attribute='amount') %}
+{% set total_expenses = total_common + total_building %}
+{% set net_profit     = total_income - total_expenses %}
+
+{# — FY income (rent + deposit profit) — #}
+{% set _c = namespace(v=0) %}
+{% for r in fy_records %}{% if r.status == 'Paid' %}{% set _c.v = _c.v + r.rent_amount %}{% endif %}{% endfor %}
+{% set fy_rent_income = _c.v %}
+{% set fy_deposit_profit = fy_deposit_profit or 0 %}
+{% set fy_income = fy_rent_income + fy_deposit_profit %}
+
+{# — FY deposits — #}
+{% set _d = namespace(v=0) %}
+{% for t in tenants %}{% set _d.v = _d.v + (t.deposit or 0) %}{% endfor %}
+{% set fy_deposits = _d.v %}
+
+{# — FY expenses — #}
+{% set fy_common_total   = fy_common|sum(attribute='amount') %}
+{% set fy_building_total = fy_building|sum(attribute='amount') %}
+{% set fy_expenses_total = fy_common_total + fy_building_total %}
+{% set fy_net            = fy_income - fy_expenses_total %}
+{% set fy_margin         = ((fy_net / fy_income * 100) | round(1)) if fy_income > 0 else 0 %}
+
+{% block content %}
+
+{# ─── KPI Strip ─────────────────────────────────────────── #}
+<div class="stat-grid fade-up d1" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:1.25rem;">
+  <div class="stat-card c-green">
+    <i class="bi bi-arrow-down-circle stat-icon" style="color:var(--green);"></i>
+    <div class="stat-label">Rent Collected</div>
+    <div class="stat-value" style="color:#4ade80;">₹{{ "{:,.0f}".format(total_income) }}</div>
+    <div class="stat-sub">{{ sel_label }}</div>
+  </div>
+  <div class="stat-card c-red">
+    <i class="bi bi-arrow-up-circle stat-icon" style="color:var(--red);"></i>
+    <div class="stat-label">Total Expenses</div>
+    <div class="stat-value" style="color:#f87171;">₹{{ "{:,.0f}".format(total_expenses) }}</div>
+    <div class="stat-sub">{{ sel_label }}</div>
+  </div>
+  <div class="stat-card {% if net_profit >= 0 %}c-gold{% else %}c-red{% endif %}">
+    <i class="bi bi-calculator stat-icon" style="color:{% if net_profit >= 0 %}var(--gold){% else %}var(--red){% endif %};"></i>
+    <div class="stat-label">Net Profit / Loss</div>
+    <div class="stat-value" style="color:{% if net_profit >= 0 %}var(--gold){% else %}#f87171{% endif %};">
+      {% if net_profit < 0 %}({% endif %}₹{{ "{:,.0f}".format(net_profit | abs) }}{% if net_profit < 0 %}){% endif %}
+    </div>
+    <div class="stat-sub">{{ sel_label }}</div>
+  </div>
+  <div class="stat-card c-blue">
+    <i class="bi bi-graph-up stat-icon" style="color:var(--blue);"></i>
+    <div class="stat-label">FY Net Margin</div>
+    <div class="stat-value" style="color:#60a5fa;">{{ fy_margin }}%</div>
+    <div class="stat-sub">{{ fy_label }}</div>
+  </div>
+</div>
+
+{# ─── Period Selector + Export Row ──────────────────────── #}
+<div class="fade-up d2" style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1.25rem;">
+  <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+    <a href="?view=month&month={{ sel_month }}&year={{ sel_year }}"
+       style="padding:.38rem .95rem;font-size:.81rem;font-weight:500;text-decoration:none;
+              background:{% if view_mode=='month' %}var(--gold){% else %}transparent{% endif %};
+              color:{% if view_mode=='month' %}#0a0a0a{% else %}var(--text-dim){% endif %};">Month</a>
+    <a href="?view=year&year={{ sel_year }}"
+       style="padding:.38rem .95rem;font-size:.81rem;font-weight:500;text-decoration:none;
+              background:{% if view_mode=='year' %}var(--gold){% else %}transparent{% endif %};
+              color:{% if view_mode=='year' %}#0a0a0a{% else %}var(--text-dim){% endif %};">Year</a>
+  </div>
+
+  {% if view_mode == "year" %}
+  <form method="GET" style="display:flex;gap:.5rem;align-items:center;">
+    <input type="hidden" name="view" value="year">
+    <select name="year" class="form-control" style="width:auto;" onchange="this.form.submit()">
+      {% for y in years %}<option value="{{ y }}" {% if y == sel_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </select>
+  </form>
+  {% else %}
+  <form method="GET" style="display:flex;gap:.5rem;align-items:center;">
+    <input type="hidden" name="view" value="month">
+    <select name="month" class="form-control" style="width:auto;" onchange="syncYear(this);this.form.submit()">
+      {% for y, m, label in months %}
+      <option value="{{ m }}" data-year="{{ y }}" {% if m == sel_month and y == sel_year %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="year" id="yearHidden" value="{{ sel_year }}">
+  </form>
+  {% endif %}
+
+  <span style="font-size:.81rem;color:var(--text-faint);">
+    <strong style="color:var(--text);">{{ sel_label }}</strong>
+    {% if view_mode=='month' %} &nbsp;|&nbsp; FY: <strong style="color:var(--gold);">{{ fy_label }}</strong>{% endif %}
+  </span>
+
+  <div style="margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap;">
+    <button class="btn btn-ghost btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+    <button class="btn btn-ghost btn-sm" id="btnExportCSV"><i class="bi bi-filetype-csv"></i> Export CSV</button>
+    <button class="btn btn-ghost btn-sm" id="btnExportJSON"><i class="bi bi-braces"></i> Export JSON</button>
+  </div>
+</div>
+
+{# ─── Tab Bar ────────────────────────────────────────────── #}
+<div class="card fade-up d2" style="margin-bottom:1.25rem;">
+  <div class="card-body" style="padding:.65rem 1.25rem;">
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab(this,'pl')"><i class="bi bi-file-earmark-bar-graph" style="margin-right:5px;"></i>P&amp;L</button>
+      <button class="tab-btn" onclick="switchTab(this,'ledger')"><i class="bi bi-journal-text" style="margin-right:5px;"></i>Ledger</button>
+      <button class="tab-btn" onclick="switchTab(this,'trail')"><i class="bi bi-shield-lock" style="margin-right:5px;"></i>Audit Trail</button>
+      <button class="tab-btn" onclick="switchTab(this,'analytics')"><i class="bi bi-bar-chart-line" style="margin-right:5px;"></i>Analytics</button>
+      <button class="tab-btn" onclick="switchTab(this,'summary')"><i class="bi bi-calendar4-range" style="margin-right:5px;"></i>Annual</button>
+    </div>
+  </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════
+   TAB 1 · P&L Statement
+══════════════════════════════════════════════════════════════ #}
+<div id="tab-pl" class="tab-panel active fade-up d3">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;" class="mob-stack">
+
+    {# Left: P&L table #}
+    <div class="card">
+      <div class="card-header">
+        <span><i class="bi bi-file-earmark-text" style="margin-right:6px;color:var(--gold);"></i>Profit &amp; Loss — {{ sel_label }}</span>
+        <span style="font-size:.72rem;color:var(--text-faint);background:var(--surface2);border:1px solid var(--border);padding:.18rem .65rem;border-radius:20px;"><i class="bi bi-patch-check"></i> Auditable</span>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <table>
+          <thead><tr><th style="width:60%;">Particulars</th><th style="text-align:right;">Amount (₹)</th></tr></thead>
+          <tbody>
+            <tr>
+              <td colspan="2" style="background:rgba(34,197,94,0.06);padding:.45rem 1rem .3rem;">
+                <span style="font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#4ade80;"><i class="bi bi-arrow-down-circle" style="margin-right:4px;"></i>Income</span>
+              </td>
+            </tr>
+            {% for r in rent_records %}{% if r.status == 'Paid' %}
+            <tr>
+              <td style="padding-left:1.75rem;color:var(--text-dim);">Rent — {{ r.tenant_name }}{% if r.tenant and r.tenant.unit %} <span style="font-size:.72rem;opacity:.55;">({{ r.tenant.unit }})</span>{% endif %}</td>
+              <td style="text-align:right;color:#4ade80;font-weight:500;">₹{{ "{:,.0f}".format(r.rent_amount) }}</td>
+            </tr>
+            {% endif %}{% endfor %}
+            {% if rent_income == 0 and deposit_profit == 0 %}
+            <tr><td style="padding-left:1.75rem;color:var(--text-faint);font-style:italic;">No rent collected for {{ sel_label }}</td><td style="text-align:right;color:var(--text-faint);">₹0</td></tr>
+            {% endif %}
+            {% if deposit_profit > 0 %}
+            <tr>
+              <td style="padding-left:1.75rem;color:var(--text-dim);">Deposit profit — vacate settlement(s) <span style="font-size:.72rem;opacity:.55;">(charged over actual spend)</span></td>
+              <td style="text-align:right;color:#c084fc;font-weight:500;">₹{{ "{:,.0f}".format(deposit_profit) }}</td>
+            </tr>
+            {% endif %}
+            <tr style="background:rgba(34,197,94,0.08);">
+              <td style="font-weight:600;color:var(--text);padding:.7rem 1rem;">Total Income</td>
+              <td style="text-align:right;font-weight:700;color:#4ade80;padding:.7rem 1rem;">₹{{ "{:,.0f}".format(total_income) }}</td>
+            </tr>
+
+            <tr>
+              <td colspan="2" style="background:rgba(239,68,68,0.06);padding:.45rem 1rem .3rem;border-top:1px solid var(--border);">
+                <span style="font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#f87171;"><i class="bi bi-arrow-up-circle" style="margin-right:4px;"></i>Expenses</span>
+              </td>
+            </tr>
+            {% if common %}
+            <tr><td colspan="2" style="padding:.3rem 1rem .15rem 1.75rem;"><span style="font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--text-faint);">Common Expenses</span></td></tr>
+            {% for e in common %}
+            <tr>
+              <td style="padding-left:2.25rem;color:var(--text-dim);">{{ e.description }}</td>
+              <td style="text-align:right;color:#f87171;">₹{{ "{:,.0f}".format(e.amount) }}</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+            {% if building %}
+            <tr><td colspan="2" style="padding:.3rem 1rem .15rem 1.75rem;"><span style="font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--text-faint);">Building Expenses</span></td></tr>
+            {% for e in building %}
+            <tr>
+              <td style="padding-left:2.25rem;color:var(--text-dim);">{{ e.description }}</td>
+              <td style="text-align:right;color:#f87171;">₹{{ "{:,.0f}".format(e.amount) }}</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+            {% if total_expenses == 0 %}
+            <tr><td style="padding-left:1.75rem;color:var(--text-faint);font-style:italic;">No expenses for {{ sel_label }}</td><td style="text-align:right;color:var(--text-faint);">₹0</td></tr>
+            {% endif %}
+            <tr style="background:rgba(239,68,68,0.08);">
+              <td style="font-weight:600;color:var(--text);padding:.7rem 1rem;">Total Expenses</td>
+              <td style="text-align:right;font-weight:700;color:#f87171;padding:.7rem 1rem;">₹{{ "{:,.0f}".format(total_expenses) }}</td>
+            </tr>
+            <tr style="background:{% if net_profit >= 0 %}rgba(232,160,32,0.1){% else %}rgba(239,68,68,0.1){% endif %};border-top:2px solid var(--border2);">
+              <td style="font-weight:700;color:var(--text);font-size:.9rem;padding:.9rem 1rem;"><i class="bi bi-calculator" style="margin-right:6px;opacity:.6;"></i>Net Profit / (Loss)</td>
+              <td style="text-align:right;font-weight:700;font-size:.95rem;padding:.9rem 1rem;color:{% if net_profit >= 0 %}var(--gold){% else %}#f87171{% endif %};">
+                {% if net_profit < 0 %}({% endif %}₹{{ "{:,.0f}".format(net_profit | abs) }}{% if net_profit < 0 %}){% endif %}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# Right: Ratios + Remarks #}
+    <div style="display:flex;flex-direction:column;gap:1rem;">
+      <div class="card">
+        <div class="card-header"><span><i class="bi bi-percent" style="margin-right:6px;color:var(--purple);"></i>Ratio Analysis</span></div>
+        <div class="card-body" style="padding:1rem;">
+          {% set margin_pct      = ((net_profit / total_income * 100) | round(1)) if total_income > 0 else 0 %}
+          {% set expense_ratio   = ((total_expenses / total_income * 100) | round(1)) if total_income > 0 else 0 %}
+
+          <div style="margin-bottom:1rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem;">
+              <span style="font-size:.78rem;color:var(--text-dim);">Net Margin</span>
+              <span style="font-size:.82rem;font-weight:600;color:{% if margin_pct >= 0 %}#4ade80{% else %}#f87171{% endif %};">{{ margin_pct }}%</span>
+            </div>
+            <div style="background:var(--surface2);border-radius:4px;height:6px;overflow:hidden;">
+              <div style="width:{{ [margin_pct | abs, 100] | min }}%;height:100%;background:{% if margin_pct >= 0 %}var(--green){% else %}var(--red){% endif %};border-radius:4px;"></div>
+            </div>
+          </div>
+          <div style="margin-bottom:1rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem;">
+              <span style="font-size:.78rem;color:var(--text-dim);">Expense Ratio</span>
+              <span style="font-size:.82rem;font-weight:600;color:{% if expense_ratio <= 40 %}#4ade80{% elif expense_ratio <= 70 %}#fbbf24{% else %}#f87171{% endif %};">{{ expense_ratio }}%</span>
+            </div>
+            <div style="background:var(--surface2);border-radius:4px;height:6px;overflow:hidden;">
+              <div style="width:{{ [expense_ratio, 100] | min }}%;height:100%;background:{% if expense_ratio <= 40 %}var(--green){% elif expense_ratio <= 70 %}var(--amber){% else %}var(--red){% endif %};border-radius:4px;"></div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-top:1rem;">
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.65rem;">
+              <div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--text-faint);margin-bottom:.3rem;">Common Exp.</div>
+              <div style="font-size:.85rem;font-weight:600;color:#f87171;">₹{{ "{:,.0f}".format(total_common) }}</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.65rem;">
+              <div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--text-faint);margin-bottom:.3rem;">Building Exp.</div>
+              <div style="font-size:.85rem;font-weight:600;color:#f87171;">₹{{ "{:,.0f}".format(total_building) }}</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.65rem;">
+              <div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--text-faint);margin-bottom:.3rem;">Collected</div>
+              <div style="font-size:.85rem;font-weight:600;color:#4ade80;">₹{{ "{:,.0f}".format(total_income) }}</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.65rem;">
+              <div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--text-faint);margin-bottom:.3rem;">Pending Rent</div>
+              <div style="font-size:.85rem;font-weight:600;color:#fbbf24;">₹{{ "{:,.0f}".format(total_pending) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="flex:1;">
+        <div class="card-header"><span><i class="bi bi-pencil-square" style="margin-right:6px;color:var(--gold);"></i>CA Remarks</span><span style="font-size:.7rem;color:var(--text-faint);">Saved locally</span></div>
+        <div class="card-body" style="padding:.9rem;">
+          <textarea id="caRemarks" class="form-control" rows="5" placeholder="Add audit observations, tax notes, or review comments for {{ sel_label }}…" style="resize:vertical;font-size:.82rem;line-height:1.55;"></textarea>
+          <div style="display:flex;gap:.5rem;margin-top:.65rem;">
+            <button class="btn btn-gold btn-sm" onclick="saveRemarks()"><i class="bi bi-floppy"></i> Save</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearRemarks()"><i class="bi bi-trash3"></i> Clear</button>
+            <span id="remarksSaved" style="font-size:.74rem;color:#4ade80;align-self:center;display:none;"><i class="bi bi-check2"></i> Saved</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════
+   TAB 2 · Ledger
+══════════════════════════════════════════════════════════════ #}
+<div id="tab-ledger" class="tab-panel fade-up d3">
+  <div class="data-table-wrap">
+    <div class="table-controls">
+      <div class="table-title"><i class="bi bi-journal-text" style="margin-right:6px;color:var(--blue);"></i>Full Debit/Credit Ledger — {{ sel_label }}</div>
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+        <input type="text" id="ledgerSearch" class="form-control" style="width:180px;" placeholder="Search entries…" oninput="filterLedger(this.value)">
+        <select id="ledgerFilter" class="form-control" style="width:auto;" onchange="filterLedger(document.getElementById('ledgerSearch').value)">
+          <option value="all">All Types</option>
+          <option value="credit">Credit Only</option>
+          <option value="debit">Debit Only</option>
+        </select>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table id="ledgerTable">
+        <thead>
+          <tr><th style="width:40px;">#</th><th>Date</th><th>Particulars</th><th>Category</th><th style="text-align:right;">Debit (₹)</th><th style="text-align:right;">Credit (₹)</th><th style="text-align:right;">Balance (₹)</th></tr>
+        </thead>
+        <tbody id="ledger-body"></tbody>
+      </table>
+    </div>
+    <div style="padding:.75rem 1.4rem;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:2rem;font-size:.82rem;">
+      <span>Total Credits: <strong id="footerCredit" style="color:#4ade80;"></strong></span>
+      <span>Total Debits: <strong id="footerDebit" style="color:#f87171;"></strong></span>
+      <span>Net: <strong id="footerNet"></strong></span>
+    </div>
+  </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════
+   TAB 3 · Audit Trail
+══════════════════════════════════════════════════════════════ #}
+<div id="tab-trail" class="tab-panel fade-up d3">
+  <div class="data-table-wrap">
+    <div class="table-controls">
+      <div class="table-title"><i class="bi bi-shield-lock" style="margin-right:6px;color:var(--purple);"></i>Tamper-Proof Audit Trail — {{ sel_label }}</div>
+      <div style="display:flex;gap:.5rem;">
+        <span style="font-size:.74rem;color:var(--text-faint);background:var(--purple-bg);border:1px solid rgba(168,85,247,.2);padding:.22rem .7rem;border-radius:20px;"><i class="bi bi-lock"></i> Read-only</span>
+        <span id="hashVerifyBadge" style="font-size:.74rem;color:#4ade80;background:var(--green-bg);border:1px solid rgba(34,197,94,.2);padding:.22rem .7rem;border-radius:20px;display:none;"><i class="bi bi-shield-check"></i> Hashes Verified</span>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>#</th><th>Timestamp</th><th>Event</th><th>Entity</th><th style="text-align:right;">Amount (₹)</th><th>Actor</th><th>Hash</th></tr></thead>
+        <tbody>
+          {% set en = namespace(n=1) %}
+          {% for r in rent_records %}{% if r.status == 'Paid' %}
+          <tr>
+            <td style="color:var(--text-faint);font-size:.78rem;">{{ en.n }}</td>
+            <td style="font-family:monospace;font-size:.75rem;color:var(--text-faint);white-space:nowrap;">{{ r.payment_date.strftime("%Y-%m-%d") if r.payment_date else "—" }}</td>
+            <td><span style="background:var(--green-bg);color:#4ade80;padding:.15rem .55rem;border-radius:4px;font-size:.72rem;border:1px solid rgba(34,197,94,.2);font-weight:500;">RENT_PAID</span></td>
+            <td style="color:var(--text-dim);font-size:.82rem;">{{ r.tenant_name }}</td>
+            <td style="text-align:right;color:#4ade80;font-size:.82rem;font-weight:500;">₹{{ "{:,.0f}".format(r.rent_amount) }}</td>
+            <td style="color:var(--text-faint);font-size:.78rem;">admin</td>
+            <td style="font-family:monospace;font-size:.68rem;color:var(--text-faint);" class="hash-cell" data-seed="{{ r.id }}{{ r.rent_amount }}{{ en.n }}">—</td>
+          </tr>
+          {% set en.n = en.n + 1 %}
+          {% endif %}{% endfor %}
+          {% for e in common %}
+          <tr>
+            <td style="color:var(--text-faint);font-size:.78rem;">{{ en.n }}</td>
+            <td style="font-family:monospace;font-size:.75rem;color:var(--text-faint);white-space:nowrap;">{{ e.date.strftime("%Y-%m-%d") if e.date else "—" }}</td>
+            <td><span style="background:var(--blue-bg);color:#60a5fa;padding:.15rem .55rem;border-radius:4px;font-size:.72rem;border:1px solid rgba(59,130,246,.2);font-weight:500;">COMMON_EXP</span></td>
+            <td style="color:var(--text-dim);font-size:.82rem;">{{ e.description }}</td>
+            <td style="text-align:right;color:#f87171;font-size:.82rem;font-weight:500;">₹{{ "{:,.0f}".format(e.amount) }}</td>
+            <td style="color:var(--text-faint);font-size:.78rem;">admin</td>
+            <td style="font-family:monospace;font-size:.68rem;color:var(--text-faint);" class="hash-cell" data-seed="{{ e.id }}{{ e.amount }}{{ en.n }}">—</td>
+          </tr>
+          {% set en.n = en.n + 1 %}
+          {% endfor %}
+          {% for e in building %}
+          <tr>
+            <td style="color:var(--text-faint);font-size:.78rem;">{{ en.n }}</td>
+            <td style="font-family:monospace;font-size:.75rem;color:var(--text-faint);white-space:nowrap;">{{ e.date.strftime("%Y-%m-%d") if e.date else "—" }}</td>
+            <td><span style="background:var(--red-bg);color:#f87171;padding:.15rem .55rem;border-radius:4px;font-size:.72rem;border:1px solid rgba(239,68,68,.2);font-weight:500;">BUILDING_EXP</span></td>
+            <td style="color:var(--text-dim);font-size:.82rem;">{{ e.description }}</td>
+            <td style="text-align:right;color:#f87171;font-size:.82rem;font-weight:500;">₹{{ "{:,.0f}".format(e.amount) }}</td>
+            <td style="color:var(--text-faint);font-size:.78rem;">admin</td>
+            <td style="font-family:monospace;font-size:.68rem;color:var(--text-faint);" class="hash-cell" data-seed="{{ e.id }}{{ e.amount }}{{ en.n }}">—</td>
+          </tr>
+          {% set en.n = en.n + 1 %}
+          {% endfor %}
+          {% if en.n == 1 %}
+          <tr><td colspan="7" style="text-align:center;padding:2.5rem;color:var(--text-faint);"><i class="bi bi-inbox" style="font-size:1.5rem;display:block;margin-bottom:.5rem;opacity:.4;"></i>No entries for {{ sel_label }}.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════
+   TAB 4 · Analytics
+══════════════════════════════════════════════════════════════ #}
+<div id="tab-analytics" class="tab-panel fade-up d3">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;" class="mob-stack">
+    <div class="card">
+      <div class="card-header"><span><i class="bi bi-pie-chart" style="margin-right:6px;color:var(--purple);"></i>Expense Breakdown</span><span style="font-size:.78rem;color:var(--text-dim);">{{ sel_label }}</span></div>
+      <div class="card-body" style="display:flex;align-items:center;justify-content:center;min-height:220px;">
+        {% if total_expenses > 0 %}
+        <canvas id="expenseDonut" width="220" height="220"></canvas>
+        {% else %}
+        <div style="text-align:center;color:var(--text-faint);"><i class="bi bi-pie-chart" style="font-size:2rem;display:block;margin-bottom:.5rem;opacity:.3;"></i>No expense data</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span><i class="bi bi-graph-up" style="margin-right:6px;color:var(--gold);"></i>FY Monthly Trend</span><span style="font-size:.78rem;color:var(--text-dim);">{{ fy_label }}</span></div>
+      <div class="card-body chart-box" style="min-height:220px;"><canvas id="monthlyTrend"></canvas></div>
+    </div>
+    <div class="card" style="grid-column:1/-1;">
+      <div class="card-header"><span><i class="bi bi-bar-chart" style="margin-right:6px;color:var(--blue);"></i>Income vs Expenses — {{ fy_label }}</span></div>
+      <div class="card-body chart-box" style="height:220px;"><canvas id="incomeExpenseBar"></canvas></div>
+    </div>
+  </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════
+   TAB 5 · Annual Summary
+══════════════════════════════════════════════════════════════ #}
+<div id="tab-summary" class="tab-panel fade-up d3">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;" class="mob-stack">
+    <div class="card">
+      <div class="card-header"><span><i class="bi bi-calendar4-range" style="margin-right:6px;color:var(--gold);"></i>Annual P&amp;L — {{ fy_label }}</span></div>
+      <div class="card-body" style="padding:0;">
+        <table>
+          <tbody>
+            <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Gross Rent Income</td><td style="text-align:right;color:#4ade80;font-weight:600;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_rent_income) }}</td></tr>
+            {% if fy_deposit_profit > 0 %}
+            <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Deposit Profit (vacate settlements)</td><td style="text-align:right;color:#c084fc;font-weight:600;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_deposit_profit) }}</td></tr>
+            {% endif %}
+            <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Common Expenses</td><td style="text-align:right;color:#f87171;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_common_total) }}</td></tr>
+            <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Building Expenses</td><td style="text-align:right;color:#f87171;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_building_total) }}</td></tr>
+            <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Total Expenses</td><td style="text-align:right;color:#f87171;font-weight:600;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_expenses_total) }}</td></tr>
+            <tr style="border-top:2px solid var(--border2);background:{% if fy_net >= 0 %}rgba(232,160,32,.07){% else %}rgba(239,68,68,.07){% endif %};">
+              <td style="font-weight:700;color:var(--text);padding:.75rem 1.2rem;">Net Profit</td>
+              <td style="text-align:right;font-weight:700;padding:.75rem 1.2rem;color:{% if fy_net >= 0 %}var(--gold){% else %}#f87171{% endif %};">
+                {% if fy_net < 0 %}({% endif %}₹{{ "{:,.0f}".format(fy_net | abs) }}{% if fy_net < 0 %}){% endif %}
+              </td>
+            </tr>
+            <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Security Deposits Held</td><td style="text-align:right;color:#60a5fa;font-weight:600;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_deposits) }}</td></tr>
+            <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Net Margin</td><td style="text-align:right;font-weight:600;padding:.6rem 1.2rem;color:{% if fy_margin >= 0 %}#4ade80{% else %}#f87171{% endif %};">{{ fy_margin }}%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span><i class="bi bi-safe" style="margin-right:6px;color:var(--green);"></i>Security Deposits by Unit</span></div>
+      <div class="card-body" style="padding:0;">
+        <table>
+          <thead><tr><th>Renter</th><th>Unit</th><th style="text-align:right;">Deposit (₹)</th></tr></thead>
+          <tbody>
+            {% for t in tenants %}
+            <tr>
+              <td style="color:var(--text-dim);">{{ t.name }}</td>
+              <td style="color:var(--text-faint);font-size:.8rem;">{{ t.unit or '—' }}</td>
+              <td style="text-align:right;color:var(--text);font-weight:500;">₹{{ "{:,.0f}".format(t.deposit or 0) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" style="text-align:center;color:var(--text-faint);padding:1.5rem;">No active tenants.</td></tr>
+            {% endfor %}
+            {% if tenants %}
+            <tr style="border-top:1px solid var(--border);background:rgba(34,197,94,.05);">
+              <td colspan="2" style="font-weight:600;color:var(--text);">Total Held</td>
+              <td style="text-align:right;font-weight:700;color:#4ade80;">₹{{ "{:,.0f}".format(fy_deposits) }}</td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# Tenant-wise FY table — uses inner namespace loops safely #}
+  <div class="card">
+    <div class="card-header"><span><i class="bi bi-people" style="margin-right:6px;color:var(--blue);"></i>Tenant-wise Annual Summary — {{ fy_label }}</span></div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr><th>Tenant</th><th>Unit</th><th style="text-align:right;">Months Paid</th><th style="text-align:right;">Collected (₹)</th><th style="text-align:right;">Pending (₹)</th><th style="text-align:center;">Status</th></tr>
+        </thead>
+        <tbody>
+          {% for t in tenants %}
+          {# Inner namespace — used ONLY in Jinja2 HTML output, never in format() directly #}
+          {% set tp = namespace(paid=0, cnt=0, pend=0) %}
+          {% for r in fy_records %}
+            {% if r.tenant_name == t.name %}
+              {% if r.status == 'Paid' %}{% set tp.paid = tp.paid + r.rent_amount %}{% set tp.cnt = tp.cnt + 1 %}{% endif %}
+              {% if r.status != 'Paid' %}{% set tp.pend = tp.pend + r.rent_amount %}{% endif %}
+            {% endif %}
+          {% endfor %}
+          {# Extract to scalars BEFORE using in format() #}
+          {% set t_paid_amt  = tp.paid %}
+          {% set t_paid_cnt  = tp.cnt %}
+          {% set t_pend_amt  = tp.pend %}
+          <tr>
+            <td style="color:var(--text);font-weight:500;">{{ t.name }}</td>
+            <td style="color:var(--text-faint);font-size:.8rem;">{{ t.unit or '—' }}</td>
+            <td style="text-align:right;color:var(--text-dim);">{{ t_paid_cnt }}</td>
+            <td style="text-align:right;color:#4ade80;font-weight:500;">₹{{ "{:,.0f}".format(t_paid_amt) }}</td>
+            <td style="text-align:right;color:{% if t_pend_amt > 0 %}#fbbf24{% else %}var(--text-faint){% endif %};">
+              {% if t_pend_amt > 0 %}₹{{ "{:,.0f}".format(t_pend_amt) }}{% else %}—{% endif %}
+            </td>
+            <td style="text-align:center;">
+              {% if t_pend_amt == 0 %}
+              <span class="badge b-paid"><span class="b-dot" style="background:#4ade80;"></span>All Clear</span>
+              {% else %}
+              <span class="badge b-pending"><span class="b-dot" style="background:#fbbf24;"></span>Pending</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// ── Tab switching ─────────────────────────────────────────
+function switchTab(btn, name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'analytics') initCharts();
+}
+function syncYear(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('yearHidden').value = opt.dataset.year || '{{ sel_year }}';
+}
+
+// ── Ledger data (Jinja2 renders numbers into JS array literal) ──
+const LEDGER_DATA = [
+  {% for r in rent_records %}{% if r.status == 'Paid' %}
+  {date:"{{ r.payment_date.strftime('%d %b %Y') if r.payment_date else '—' }}",
+   particulars:"Rent \u2014 {{ r.tenant_name | replace('"','') }}{% if r.tenant and r.tenant.unit %} ({{ r.tenant.unit }}){% endif %}",
+   category:"Rent", type:"credit", amount:{{ r.rent_amount | int }}},
+  {% endif %}{% endfor %}
+  {% for e in common %}
+  {date:"{{ e.date.strftime('%d %b %Y') if e.date else '—' }}",
+   particulars:"{{ e.description | replace('"','') }}",
+   category:"Common Expense", type:"debit", amount:{{ e.amount | int }}},
+  {% endfor %}
+  {% for e in building %}
+  {date:"{{ e.date.strftime('%d %b %Y') if e.date else '—' }}",
+   particulars:"{{ e.description | replace('"','') }}",
+   category:"Building Expense", type:"debit", amount:{{ e.amount | int }}},
+  {% endfor %}
+];
+
+// ── Build Ledger table ────────────────────────────────────
+(function buildLedger() {
+  const tbody = document.getElementById('ledger-body');
+  if (!LEDGER_DATA.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2.5rem;color:var(--text-faint);"><i class="bi bi-inbox" style="font-size:1.5rem;display:block;margin-bottom:.5rem;opacity:.4;"></i>No entries for {{ sel_label }}.</td></tr>';
+    updateLedgerFooter(0, 0); return;
+  }
+  let balance = 0, totalC = 0, totalD = 0;
+  LEDGER_DATA.forEach((e, i) => {
+    balance += e.type === 'credit' ? e.amount : -e.amount;
+    e.type === 'credit' ? totalC += e.amount : totalD += e.amount;
+    const balColor = balance >= 0 ? '#4ade80' : '#f87171';
+    const typeTag  = e.type === 'credit'
+      ? '<span style="background:var(--green-bg);color:#4ade80;padding:.13rem .5rem;border-radius:4px;font-size:.72rem;border:1px solid rgba(34,197,94,.2);font-weight:500;">Credit</span>'
+      : '<span style="background:var(--red-bg);color:#f87171;padding:.13rem .5rem;border-radius:4px;font-size:.72rem;border:1px solid rgba(239,68,68,.2);font-weight:500;">Debit</span>';
+    const dCell = e.type==='debit'   ? `<span style="color:#f87171;font-weight:500;">₹${fmt(e.amount)}</span>` : '<span style="color:var(--text-faint);">—</span>';
+    const cCell = e.type==='credit'  ? `<span style="color:#4ade80;font-weight:500;">₹${fmt(e.amount)}</span>` : '<span style="color:var(--text-faint);">—</span>';
+    const row = document.createElement('tr');
+    row.dataset.type = e.type;
+    row.dataset.text = (e.date + e.particulars + e.category).toLowerCase();
+    row.innerHTML = `<td style="color:var(--text-faint);font-size:.78rem;">${i+1}</td>
+      <td style="color:var(--text-dim);white-space:nowrap;font-size:.82rem;">${e.date}</td>
+      <td style="color:var(--text);">${e.particulars}</td>
+      <td style="font-size:.78rem;color:var(--text-dim);">${e.category}</td>
+      <td style="text-align:right;">${dCell}</td>
+      <td style="text-align:right;">${cCell}</td>
+      <td style="text-align:right;font-weight:500;color:${balColor};">₹${fmt(Math.abs(balance))}</td>`;
+    tbody.appendChild(row);
+  });
+  updateLedgerFooter(totalC, totalD);
+})();
+
+function fmt(n) { return n.toLocaleString('en-IN', {maximumFractionDigits:0}); }
+function updateLedgerFooter(c, d) {
+  document.getElementById('footerCredit').textContent = '₹' + fmt(c);
+  document.getElementById('footerDebit').textContent  = '₹' + fmt(d);
+  const net = c - d;
+  const el  = document.getElementById('footerNet');
+  el.textContent = (net < 0 ? '(' : '') + '₹' + fmt(Math.abs(net)) + (net < 0 ? ')' : '');
+  el.style.color = net >= 0 ? '#4ade80' : '#f87171';
+}
+function filterLedger(q) {
+  const tf  = document.getElementById('ledgerFilter').value;
+  const low = q.toLowerCase();
+  document.querySelectorAll('#ledgerTable tbody tr').forEach(row => {
+    const tok = tf === 'all' || row.dataset.type === tf;
+    const txk = !low || (row.dataset.text || '').includes(low);
+    row.style.display = (tok && txk) ? '' : 'none';
+  });
+}
+
+// ── Audit trail hashes ────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.hash-cell').forEach(cell => {
+    const s = cell.dataset.seed || Math.random().toString();
+    let h = 0;
+    for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; }
+    cell.textContent = Math.abs(h).toString(16).padStart(8, '0').toUpperCase() + '…';
+  });
+  setTimeout(() => {
+    const b = document.getElementById('hashVerifyBadge');
+    if (b) b.style.display = 'inline';
+  }, 600);
+
+  // CA Remarks — persisted per period
+  const rKey = 'ca_remarks_{{ sel_year }}_{{ sel_month }}';
+  const ta   = document.getElementById('caRemarks');
+  if (ta) { try { ta.value = localStorage.getItem(rKey) || ''; } catch(e) {} }
+});
+
+function saveRemarks() {
+  const rKey = 'ca_remarks_{{ sel_year }}_{{ sel_month }}';
+  try {
+    localStorage.setItem(rKey, document.getElementById('caRemarks').value);
+    const s = document.getElementById('remarksSaved');
+    s.style.display = 'inline';
+    setTimeout(() => s.style.display = 'none', 2000);
+  } catch(e) {}
+}
+function clearRemarks() {
+  document.getElementById('caRemarks').value = '';
+  try { localStorage.removeItem('ca_remarks_{{ sel_year }}_{{ sel_month }}'); } catch(e) {}
+}
+
+// ── Charts — lazy, only when Analytics tab opened ─────────
+let chartsInited = false;
+function initCharts() {
+  if (chartsInited) return;
+  chartsInited = true;
+  if (typeof Chart === 'undefined') return;
+
+  // Expense donut
+  const donutEl = document.getElementById('expenseDonut');
+  if (donutEl) {
+    new Chart(donutEl, {
+      type: 'doughnut',
+      data: {
+        labels: ['Common Exp.', 'Building Exp.'],
+        datasets: [{
+          data: [{{ total_common | int }}, {{ total_building | int }}],
+          backgroundColor: ['rgba(59,130,246,.7)', 'rgba(239,68,68,.7)'],
+          borderColor:     ['rgba(59,130,246,1)',   'rgba(239,68,68,1)'],
+          borderWidth: 1.5
+        }]
+      },
+      options: {
+        cutout: '68%', responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,.55)', font:{size:11}, padding:16 } } }
+      }
+    });
+  }
+
+  // FY monthly trend — data built via Jinja2 into a JS array
+  const fyMonthsRaw = [
+    {% for y, m, label in months %}
+    {% set mo = namespace(v=0) %}
+    {% for r in fy_records %}{% if r.month == m and r.year == y and r.status == 'Paid' %}{% set mo.v = mo.v + r.rent_amount %}{% endif %}{% endfor %}
+    { label: {{ label | tojson }}, income: {{ mo.v | int }} },
+    {% endfor %}
+  ];
+  const fyMonths = fyMonthsRaw.slice(0, 12).reverse();
+
+  const trendEl = document.getElementById('monthlyTrend');
+  if (trendEl && fyMonths.length) {
+    new Chart(trendEl, {
+      type: 'line',
+      data: {
+        labels: fyMonths.map(m => m.label),
+        datasets: [{ label:'Rent Collected', data: fyMonths.map(m => m.income),
+          borderColor:'#e8a020', backgroundColor:'rgba(232,160,32,.1)',
+          fill:true, tension:0.4, pointRadius:4, pointBackgroundColor:'#e8a020', borderWidth:2 }]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales: {
+          x: { ticks:{color:'rgba(255,255,255,.4)',font:{size:10}}, grid:{color:'rgba(255,255,255,.04)'} },
+          y: { ticks:{color:'rgba(255,255,255,.4)',font:{size:10},callback:v=>'₹'+v.toLocaleString('en-IN')}, grid:{color:'rgba(255,255,255,.05)'} }
+        },
+        plugins: { legend:{display:false} }
+      }
+    });
+  }
+
+  // Income vs Expense bar
+  const fyExpRaw = [
+    {% for y, m, label in months %}
+    {% set me = namespace(v=0) %}
+    {% for e in fy_common   %}{% if e.date and e.date.month == m and e.date.year == y %}{% set me.v = me.v + e.amount %}{% endif %}{% endfor %}
+    {% for e in fy_building %}{% if e.date and e.date.month == m and e.date.year == y %}{% set me.v = me.v + e.amount %}{% endif %}{% endfor %}
+    {{ me.v | int }},
+    {% endfor %}
+  ];
+  const fyExp = fyExpRaw.slice(0, 12).reverse();
+
+  const barEl = document.getElementById('incomeExpenseBar');
+  if (barEl && fyMonths.length) {
+    new Chart(barEl, {
+      type: 'bar',
+      data: {
+        labels: fyMonths.map(m => m.label),
+        datasets: [
+          { label:'Income',   data: fyMonths.map(m => m.income), backgroundColor:'rgba(34,197,94,.6)',  borderRadius:4 },
+          { label:'Expenses', data: fyExp,                        backgroundColor:'rgba(239,68,68,.5)',  borderRadius:4 }
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales: {
+          x: { ticks:{color:'rgba(255,255,255,.4)',font:{size:10}}, grid:{color:'rgba(255,255,255,.04)'} },
+          y: { ticks:{color:'rgba(255,255,255,.4)',font:{size:10},callback:v=>'₹'+v.toLocaleString('en-IN')}, grid:{color:'rgba(255,255,255,.05)'} }
+        },
+        plugins: { legend:{ labels:{color:'rgba(255,255,255,.55)',font:{size:11}} } }
+      }
+    });
+  }
+}
+
+// ── CSV / JSON Export ─────────────────────────────────────
+document.getElementById('btnExportCSV').onclick = function () {
+  if (!LEDGER_DATA.length) return alert('No data to export.');
+  const rows = [['#','Date','Particulars','Category','Type','Amount']];
+  LEDGER_DATA.forEach((e,i) => rows.push([i+1, e.date, e.particulars, e.category, e.type, e.amount]));
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  dlBlob(csv, 'text/csv', 'ca_audit_{{ sel_label | replace(" ","_") }}.csv');
+};
+document.getElementById('btnExportJSON').onclick = function () {
+  const payload = {
+    period: '{{ sel_label }}',
+    generated: new Date().toISOString(),
+    summary: { total_income: {{ total_income | int }}, total_expenses: {{ total_expenses | int }}, net: {{ net_profit | int }} },
+    entries: LEDGER_DATA
+  };
+  dlBlob(JSON.stringify(payload, null, 2), 'application/json', 'ca_audit_{{ sel_label | replace(" ","_") }}.json');
+};
+function dlBlob(content, mime, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], {type: mime}));
+  a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+}
+</script>
+{% endblock %}

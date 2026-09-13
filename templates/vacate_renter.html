@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Vacate Settlement — {{ tenant.name }}{% endblock %}
+{% block page_title %}Vacate Renter{% endblock %}
+{% block content %}
+{% set colors = ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
+{% set color = colors[tenant.id % 7] %}
+
+<div style="max-width:640px;" class="fade-up d1">
+  <div class="card">
+    <div class="card-header">
+      <span>
+        <div style="display:inline-flex;align-items:center;gap:10px;">
+          <div style="width:32px;height:32px;border-radius:50%;background:{{ color }}20;border:2px solid {{ color }}50;display:flex;align-items:center;justify-content:center;font-size:.9rem;font-weight:700;color:{{ color }};">{{ tenant.name[0].upper() }}</div>
+          <span>Vacate &amp; Deposit Settlement — <strong style="color:var(--text);">{{ tenant.name }}</strong></span>
+        </div>
+      </span>
+      <a href="{{ url_for('renter_detail', tid=tenant.id) }}" class="btn btn-ghost btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
+    <div class="card-body">
+
+      <!-- Deposit summary banner -->
+      <div style="background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.5rem;display:flex;gap:1.5rem;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:.7rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;">Security Deposit Held</div>
+          <div style="font-size:1.3rem;font-weight:700;color:#60a5fa;">₹{{ "{:,.0f}".format(tenant.deposit or 0) }}</div>
+        </div>
+        <div>
+          <div style="font-size:.7rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;">Unit</div>
+          <div style="font-size:1rem;font-weight:600;color:{{ color }};">{{ tenant.unit or '—' }}{% if tenant.unit_number %} #{{ tenant.unit_number }}{% endif %}</div>
+        </div>
+        <div>
+          <div style="font-size:.7rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;">Joined</div>
+          <div style="font-size:.9rem;color:var(--text-dim);">{{ tenant.join_date.strftime("%d %b %Y") if tenant.join_date else "—" }}</div>
+        </div>
+      </div>
+
+      <form method="POST" id="vacateForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        {% if outstanding_records %}
+        <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.25rem;">
+          <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#fbbf24;margin-bottom:.5rem;">
+            <i class="bi bi-exclamation-triangle"></i> Unpaid Rent — ₹{{ "{:,.0f}".format(outstanding_total) }} total
+          </div>
+          {% for r in outstanding_records %}
+          <div style="display:flex;justify-content:space-between;font-size:.82rem;color:var(--text-dim);padding:.2rem 0;">
+            <span>{{ r.month_label() }}</span><span>₹{{ "{:,.0f}".format(r.rent_amount) }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);margin-bottom:.75rem;">Deductions from Deposit</div>
+
+        <div class="form-grid form-grid-2" style="margin-bottom:.75rem;">
+          <div class="form-group">
+            <label>Repair — Amount Charged to Tenant (₹)</label>
+            <input class="form-control" name="repair_cost" type="number" step="0.01" min="0"
+              value="{{ settlement.repair_cost if settlement else 0 }}" placeholder="0"
+              oninput="calcReturn()" id="repairCost">
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Plumbing, electrical, structural fixes</div>
+          </div>
+          <div class="form-group">
+            <label>Repair — Actual Amount Spent (₹)</label>
+            <input class="form-control" name="repair_actual_cost" type="number" step="0.01" min="0"
+              value="{{ settlement.repair_actual_cost if settlement else 0 }}" placeholder="0"
+              oninput="calcReturn()" id="repairActual">
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">What you really paid — only this becomes a Building Expense.</div>
+          </div>
+        </div>
+
+        <div class="form-grid form-grid-2" style="margin-bottom:1.25rem;">
+          <div class="form-group">
+            <label>Painting/Cleaning — Amount Charged (₹)</label>
+            <input class="form-control" name="other_deduction" type="number" step="0.01" min="0"
+              value="{{ settlement.other_deduction if settlement else 0 }}" placeholder="0"
+              oninput="calcReturn()" id="otherDeduction">
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Wall painting, deep cleaning etc.</div>
+          </div>
+          <div class="form-group">
+            <label>Painting/Cleaning — Actual Amount Spent (₹)</label>
+            <input class="form-control" name="other_actual_cost" type="number" step="0.01" min="0"
+              value="{{ settlement.other_actual_cost if settlement else 0 }}" placeholder="0"
+              oninput="calcReturn()" id="otherActual">
+          </div>
+        </div>
+
+        {% if outstanding_records %}
+        <div class="form-group" style="margin-bottom:1.25rem;">
+          <label>Unpaid Rent to Recover from Deposit (₹)</label>
+          <input class="form-control" name="pending_rent_deducted" type="number" step="0.01" min="0"
+            max="{{ outstanding_total }}"
+            value="{{ settlement.pending_rent_deducted if settlement else outstanding_total }}"
+            oninput="calcReturn()" id="rentDeducted">
+          <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">
+            Up to ₹{{ "{:,.0f}".format(outstanding_total) }} outstanding. Matching rent record(s) will be auto-marked Paid.
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="form-group" style="margin-bottom:1.25rem;">
+          <label>Deduction Notes / Breakdown</label>
+          <textarea class="form-control" name="deduction_notes" rows="2"
+            placeholder="e.g. Bathroom tiles broken ₹3000, Kitchen painting ₹2500...">{{ settlement.deduction_notes if settlement else '' }}</textarea>
+        </div>
+
+        <!-- Return amount calculator -->
+        <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.25rem;">
+          <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);margin-bottom:.75rem;">Deposit Settlement Calculation</div>
+          <div style="display:flex;flex-direction:column;gap:.4rem;">
+            <div style="display:flex;justify-content:space-between;font-size:.85rem;">
+              <span style="color:var(--text-dim);">Security Deposit Held</span>
+              <span style="color:#60a5fa;font-weight:600;">+ ₹{{ "{:,.0f}".format(tenant.deposit or 0) }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:.85rem;" id="repairRow">
+              <span style="color:var(--text-dim);">Repair Deduction</span>
+              <span style="color:#f87171;" id="repairDisplay">− ₹0</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:.85rem;" id="otherRow">
+              <span style="color:var(--text-dim);">Other Deduction</span>
+              <span style="color:#f87171;" id="otherDisplay">− ₹0</span>
+            </div>
+            {% if outstanding_records %}
+            <div style="display:flex;justify-content:space-between;font-size:.85rem;" id="rentRow">
+              <span style="color:var(--text-dim);">Unpaid Rent Recovered</span>
+              <span style="color:#f87171;" id="rentDisplay">− ₹0</span>
+            </div>
+            {% endif %}
+            <div style="display:flex;justify-content:space-between;font-size:.82rem;" id="profitRow">
+              <span style="color:var(--text-dim);">Profit Kept (charged − actually spent)</span>
+              <span style="color:#a78bfa;" id="profitDisplay">₹0</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:1rem;font-weight:700;border-top:1px dashed var(--border2);padding-top:.5rem;margin-top:.3rem;">
+              <span style="color:var(--text);">Amount to Return</span>
+              <span id="returnDisplay" style="color:#4ade80;">₹{{ "{:,.0f}".format(tenant.deposit or 0) }}</span>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top:.85rem;margin-bottom:0;">
+            <label style="font-size:.8rem;">Override Return Amount (if different)</label>
+            <input class="form-control" name="return_amount" type="number" step="0.01" min="0"
+              id="returnAmount"
+              value="{{ settlement.return_amount if settlement else (tenant.deposit or 0) }}"
+              placeholder="{{ tenant.deposit or 0 }}">
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Auto-calculated above. Edit only if needed.</div>
+          </div>
+        </div>
+
+        <div class="form-grid form-grid-2" style="margin-bottom:1.5rem;">
+          <div class="form-group">
+            <label>Vacated Date <span style="color:var(--red)">*</span></label>
+            <input class="form-control" name="vacated_date" type="date" required
+              value="{{ settlement.settlement_date.strftime('%Y-%m-%d') if settlement and settlement.settlement_date else today.strftime('%Y-%m-%d') }}">
+          </div>
+        </div>
+
+        <!-- Warning banner -->
+        <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:.75rem 1rem;margin-bottom:1.25rem;display:flex;gap:10px;align-items:flex-start;">
+          <i class="bi bi-exclamation-triangle" style="color:#fbbf24;margin-top:2px;flex-shrink:0;"></i>
+          <div style="font-size:.8rem;color:var(--text-dim);">
+            This will mark <strong style="color:var(--text);">{{ tenant.name }}</strong> as <strong style="color:#f87171;">Vacated</strong>. Their unit will be freed. This action can be undone by editing their profile.
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          <button type="submit" class="btn btn-danger" onclick="return confirm('Confirm vacate settlement for {{ tenant.name }}?')">
+            <i class="bi bi-box-arrow-right"></i> Confirm Vacate &amp; Save Settlement
+          </button>
+          <a href="{{ url_for('renter_detail', tid=tenant.id) }}" class="btn btn-ghost">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const DEPOSIT     = {{ tenant.deposit or 0 }};
+const OUTSTANDING = {{ outstanding_total or 0 }};
+function calcReturn() {
+  const repair       = parseFloat(document.getElementById('repairCost').value)||0;
+  const repairActual = Math.min(parseFloat(document.getElementById('repairActual')?.value)||0, repair);
+  const other        = parseFloat(document.getElementById('otherDeduction').value)||0;
+  const otherActual  = Math.min(parseFloat(document.getElementById('otherActual')?.value)||0, other);
+  const rentDedEl    = document.getElementById('rentDeducted');
+  const rentDed      = rentDedEl ? Math.min(parseFloat(rentDedEl.value)||0, OUTSTANDING) : 0;
+  const profit       = Math.max(0, repair - repairActual) + Math.max(0, other - otherActual);
+
+  const ret = Math.max(0, DEPOSIT - repair - other - rentDed);
+  document.getElementById('repairDisplay').textContent = '− ₹' + repair.toLocaleString('en-IN');
+  document.getElementById('otherDisplay').textContent  = '− ₹' + other.toLocaleString('en-IN');
+  if (document.getElementById('profitDisplay')) document.getElementById('profitDisplay').textContent = '₹' + profit.toLocaleString('en-IN');
+  if (document.getElementById('rentDisplay')) document.getElementById('rentDisplay').textContent = '− ₹' + rentDed.toLocaleString('en-IN');
+  document.getElementById('returnDisplay').textContent = '₹' + ret.toLocaleString('en-IN');
+  document.getElementById('returnDisplay').style.color = ret > 0 ? '#4ade80' : '#f87171';
+  document.getElementById('returnAmount').value = ret.toFixed(2);
+}
+calcReturn();
+</script>
+{% endblock %}

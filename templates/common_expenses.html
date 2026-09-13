@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}Common Expenses — RentManager{% endblock %}
+{% block page_title %}Common Expenses{% endblock %}
+{% block content %}
+
+{% set total = expenses|sum(attribute='amount') %}
+
+{# Compute total per-unit share by summing each expense's own per-unit amount #}
+{% set per_unit_total = namespace(v=0) %}
+{% for e in expenses %}
+  {% if e.split_units and e.split_units > 0 %}
+    {% set per_unit_total.v = per_unit_total.v + (e.amount / e.split_units) %}
+  {% endif %}
+{% endfor %}
+
+<div class="stat-grid fade-up d1">
+  <div class="stat-card c-blue">
+    <i class="bi bi-share stat-icon" style="color:var(--blue)"></i>
+    <div class="stat-label">Total Common Expenses</div>
+    <div class="stat-value" style="color:#60a5fa">₹{{ "{:,.0f}".format(total) }}</div>
+    <div class="stat-sub">{{ expenses|length }} entries</div>
+  </div>
+  <div class="stat-card c-gold">
+    <i class="bi bi-houses stat-icon" style="color:var(--gold)"></i>
+    <div class="stat-label">Per Unit Share</div>
+    <div class="stat-value" style="color:var(--gold)">
+      {% if expenses %}₹{{ "{:,.0f}".format(per_unit_total.v) }}{% else %}₹0{% endif %}
+    </div>
+    <div class="stat-sub">Sum of each expense ÷ its units</div>
+  </div>
+  <div class="stat-card c-green">
+    <i class="bi bi-tags stat-icon" style="color:var(--green)"></i>
+    <div class="stat-label">Categories</div>
+    <div class="stat-value" style="color:#4ade80">
+      {% set seen = [] %}
+      {% for e in expenses %}{% if e.category not in seen %}{% set _ = seen.append(e.category) %}{% endif %}{% endfor %}
+      {{ seen|length }}
+    </div>
+    <div class="stat-sub">Distinct categories</div>
+  </div>
+</div>
+
+<!-- Add Form -->
+<div class="card fade-up d2" style="margin-bottom:1.25rem;">
+  <div class="card-header">
+    <span><i class="bi bi-plus-circle" style="margin-right:6px;color:var(--gold);"></i>Add Common Expense</span>
+  </div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('add_common_expense') }}" id="addExpenseForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-grid form-grid-3" style="margin-bottom:.85rem;">
+        <div class="form-group">
+          <label>Description <span style="color:var(--red)">*</span></label>
+          <input class="form-control" name="description" id="f-desc" required placeholder="e.g. Water Bill">
+        </div>
+        <div class="form-group">
+          <label>Amount (₹) <span style="color:var(--red)">*</span></label>
+          <input class="form-control" name="amount" id="f-amount" type="number" step="0.01" min="0.01" required placeholder="2400">
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <select class="form-control" name="category" id="f-cat">
+            <option value="Utilities">Utilities</option>
+            <option value="Maintenance">Maintenance</option>
+            <option value="Water Bill">Water Bill</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Split Across Units</label>
+          <input class="form-control" name="split_units" id="f-units" type="number" value="6" min="1" max="20">
+        </div>
+        <div class="form-group">
+          <label>Date <span style="color:var(--red)">*</span></label>
+          <input class="form-control" name="date" id="f-date" type="date" required>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <input class="form-control" name="notes" id="f-notes" placeholder="Optional">
+        </div>
+      </div>
+
+      <!-- Live per-unit preview -->
+      <div id="preview-bar" style="display:none;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:.6rem 1rem;margin-bottom:.85rem;font-size:.83rem;color:var(--text-dim);">
+        <i class="bi bi-calculator" style="margin-right:6px;color:var(--gold);"></i>
+        <span id="preview-text"></span>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button type="submit" class="btn btn-gold" id="submitBtn">
+          <i class="bi bi-plus-lg"></i> Add Expense
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="resetForm()">
+          <i class="bi bi-x"></i> Clear
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Expense Log -->
+<div class="data-table-wrap fade-up d3">
+  <div class="table-controls">
+    <div class="table-title">
+      <i class="bi bi-list-ul" style="margin-right:6px;color:var(--blue);"></i>Expense Log
+    </div>
+    <span style="font-size:.78rem;color:var(--text-faint);">{{ expenses|length }} total entries · ₹{{ "{:,.0f}".format(total) }} spent</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th>Category</th>
+          <th style="text-align:right;">Total (₹)</th>
+          <th style="text-align:right;">Per Unit (₹)</th>
+          <th style="text-align:center;">Units Split</th>
+          <th>Notes</th>
+          <th style="text-align:center;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in expenses %}
+        <tr>
+          <td style="color:var(--text-dim);white-space:nowrap;">
+            {{ e.date.strftime("%d %b %Y") if e.date else "—" }}
+          </td>
+          <td style="color:var(--text);font-weight:500;">{{ e.description }}</td>
+          <td>
+            <span style="background:var(--blue-bg);color:#60a5fa;padding:.18rem .6rem;border-radius:20px;font-size:.72rem;border:1px solid rgba(59,130,246,.2);white-space:nowrap;">
+              {{ e.category }}
+            </span>
+          </td>
+          <td style="font-weight:600;color:var(--text);text-align:right;">
+            ₹{{ "{:,.0f}".format(e.amount) }}
+          </td>
+          <td style="color:#60a5fa;font-weight:500;text-align:right;">
+            ₹{{ "{:,.0f}".format(e.amount / e.split_units) if e.split_units else "—" }}
+          </td>
+          <td style="color:var(--text-dim);text-align:center;">{{ e.split_units }}</td>
+          <td style="color:var(--text-faint);font-size:.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            {{ e.notes or "—" }}
+          </td>
+          <td style="text-align:center;">
+            <form method="POST" action="{{ url_for('delete_common_expense', eid=e.id) }}"
+                  onsubmit="return confirm('Delete \'{{ e.description }}\' (₹{{ '{:,.0f}'.format(e.amount) }})?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-danger btn-sm" title="Delete">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" style="text-align:center;padding:3rem;color:var(--text-faint);">
+            <i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:.5rem;opacity:.4;"></i>
+            No common expenses yet. Add one above.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+
+      {% if expenses %}
+      <tfoot>
+        <tr style="background:var(--surface2);border-top:2px solid var(--border2);">
+          <td colspan="3" style="font-weight:600;color:var(--text);padding:.7rem 1rem;">Total</td>
+          <td style="font-weight:700;color:#60a5fa;text-align:right;padding:.7rem 1rem;">
+            ₹{{ "{:,.0f}".format(total) }}
+          </td>
+          <td style="font-weight:700;color:var(--gold);text-align:right;padding:.7rem 1rem;">
+            ₹{{ "{:,.0f}".format(per_unit_total.v) }}
+          </td>
+          <td colspan="3"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Set today's date as default
+document.getElementById('f-date').valueAsDate = new Date();
+
+// Live per-unit preview
+function updatePreview() {
+  const amount = parseFloat(document.getElementById('f-amount').value) || 0;
+  const units  = parseInt(document.getElementById('f-units').value) || 6;
+  const desc   = document.getElementById('f-desc').value.trim();
+  const bar    = document.getElementById('preview-bar');
+  const text   = document.getElementById('preview-text');
+  if (amount > 0) {
+    const perUnit = (amount / units).toFixed(2);
+    text.innerHTML = `<strong style="color:var(--text)">₹${parseFloat(perUnit).toLocaleString('en-IN')}</strong> per unit — ₹${amount.toLocaleString('en-IN')} split across <strong style="color:var(--text)">${units}</strong> units${desc ? ' for <em>' + desc + '</em>' : ''}`;
+    bar.style.display = 'block';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+document.getElementById('f-amount').addEventListener('input', updatePreview);
+document.getElementById('f-units').addEventListener('input', updatePreview);
+document.getElementById('f-desc').addEventListener('input', updatePreview);
+
+// Reset form
+function resetForm() {
+  document.getElementById('addExpenseForm').reset();
+  document.getElementById('f-date').valueAsDate = new Date();
+  document.getElementById('preview-bar').style.display = 'none';
+}
+
+// Prevent double submit
+document.getElementById('addExpenseForm').addEventListener('submit', function(e) {
+  const btn = document.getElementById('submitBtn');
+  const desc = document.getElementById('f-desc').value.trim();
+  const amt  = parseFloat(document.getElementById('f-amount').value);
+  const dt   = document.getElementById('f-date').value;
+  if (!desc || !amt || amt <= 0 || !dt) {
+    e.preventDefault();
+    alert('Please fill in Description, Amount, and Date.');
+    return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...';
+});
+</script>
+{% endblock %}

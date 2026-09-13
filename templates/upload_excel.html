@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Upload Excel — Rent Manager{% endblock %}
+{% block content %}
+<div style="max-width:640px;margin:0 auto;padding:1.5rem 1rem;">
+
+  <!-- Page header -->
+  <div style="margin-bottom:1.6rem;">
+    <h1 style="font-size:1.35rem;font-weight:700;color:var(--text);margin:0 0 .3rem;">
+      <i class="bi bi-file-earmark-arrow-up" style="color:var(--gold);margin-right:.4rem;"></i>
+      Upload Excel Data
+    </h1>
+    <p style="color:var(--text-dim);font-size:.875rem;margin:0;">
+      Import data into the database from a previously exported Rent Manager Excel file.
+    </p>
+  </div>
+
+  <!-- Flash messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ 'success' if cat=='success' else ('warning' if cat=='warning' else 'danger') }}"
+           style="margin-bottom:.75rem;">
+        <i class="bi bi-{{ 'check-circle' if cat=='success' else ('exclamation-triangle' if cat=='warning' else 'x-circle') }}"></i>
+        {{ msg }}
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <!-- Upload card -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:2rem;">
+
+    <!-- Drop zone -->
+    <div id="drop-zone"
+         onclick="document.getElementById('excel_file').click()"
+         style="border:2px dashed var(--border2);border-radius:var(--radius);
+                padding:2.5rem 1rem;text-align:center;cursor:pointer;
+                transition:border-color .2s,background .2s;margin-bottom:1.5rem;">
+      <i class="bi bi-file-earmark-excel" style="font-size:2.8rem;color:#1e7a45;display:block;margin-bottom:.75rem;"></i>
+      <p style="font-size:.95rem;font-weight:600;color:var(--text);margin:0 0 .3rem;">
+        Click to choose or drag &amp; drop your file
+      </p>
+      <p style="font-size:.78rem;color:var(--text-faint);margin:0;">Accepts .xlsx or .xls — exported from this app</p>
+      <div id="file-name-display" style="margin-top:.75rem;font-size:.82rem;color:var(--gold);font-weight:500;display:none;"></div>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" id="upload-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="file" name="excel_file" id="excel_file"
+             accept=".xlsx,.xls" style="display:none"
+             onchange="handleFileSelect(this)">
+
+      <!-- What will be imported -->
+      <div style="background:var(--surface2);border-radius:var(--radius);padding:1rem 1.2rem;margin-bottom:1.4rem;">
+        <p style="font-size:.8rem;font-weight:600;color:var(--text-dim);text-transform:uppercase;
+                  letter-spacing:.06em;margin:0 0 .6rem;">What gets imported</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .8rem;">
+          {% set sheets = [
+            ("bi-people","Tenants","Added or updated by name + phone"),
+            ("bi-currency-rupee","Rent Records","Matched by tenant, month & year"),
+            ("bi-lightning","Common Expenses","New rows only"),
+            ("bi-building","Building Expenses","New rows only"),
+            ("bi-door-open","Vacate Settlements","Updated if tenant already exists"),
+          ] %}
+          {% for icon, label, note in sheets %}
+          <div style="display:flex;align-items:flex-start;gap:.5rem;padding:.35rem 0;">
+            <i class="bi {{ icon }}" style="color:var(--gold);font-size:.9rem;margin-top:.1rem;flex-shrink:0;"></i>
+            <div>
+              <div style="font-size:.82rem;font-weight:600;color:var(--text);">{{ label }}</div>
+              <div style="font-size:.74rem;color:var(--text-faint);">{{ note }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Warning -->
+      <div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);
+                  border-radius:var(--radius);padding:.75rem 1rem;margin-bottom:1.4rem;
+                  display:flex;align-items:flex-start;gap:.6rem;">
+        <i class="bi bi-exclamation-triangle-fill" style="color:var(--amber);flex-shrink:0;margin-top:.1rem;"></i>
+        <p style="font-size:.8rem;color:var(--text-dim);margin:0;line-height:1.5;">
+          Existing records matched by name/key will be <strong>updated</strong>.
+          New records will be <strong>inserted</strong>. No data is deleted.
+          Always export a backup first.
+        </p>
+      </div>
+
+      <!-- Submit -->
+      <button type="submit" id="submit-btn" disabled
+              style="width:100%;padding:.75rem;border:none;border-radius:var(--radius);
+                     background:linear-gradient(135deg,#1e6f3e,#27a85a);
+                     color:#fff;font-size:.9rem;font-weight:600;cursor:not-allowed;
+                     opacity:.45;transition:opacity .2s;display:flex;align-items:center;
+                     justify-content:center;gap:.5rem;">
+        <i class="bi bi-cloud-upload-fill"></i>
+        <span id="btn-label">Select a file to continue</span>
+      </button>
+    </form>
+  </div>
+
+  <!-- Back link -->
+  <div style="margin-top:1.2rem;text-align:center;">
+    <a href="{{ url_for('dashboard') }}"
+       style="font-size:.82rem;color:var(--text-faint);text-decoration:none;">
+      <i class="bi bi-arrow-left"></i> Back to Dashboard
+    </a>
+  </div>
+</div>
+
+<script>
+  const dropZone  = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('excel_file');
+  const submitBtn = document.getElementById('submit-btn');
+  const btnLabel  = document.getElementById('btn-label');
+  const fileDisp  = document.getElementById('file-name-display');
+
+  function handleFileSelect(input) {
+    if (input.files && input.files[0]) {
+      const name = input.files[0].name;
+      fileDisp.textContent = '📄 ' + name;
+      fileDisp.style.display = 'block';
+      dropZone.style.borderColor  = '#27a85a';
+      dropZone.style.background   = 'rgba(39,168,90,.06)';
+      submitBtn.disabled          = false;
+      submitBtn.style.opacity     = '1';
+      submitBtn.style.cursor      = 'pointer';
+      btnLabel.textContent        = 'Import "' + name + '"';
+    }
+  }
+
+  // Drag & drop
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.style.borderColor = '#27a85a';
+    dropZone.style.background  = 'rgba(39,168,90,.06)';
+  });
+  dropZone.addEventListener('dragleave', () => {
+    if (!fileInput.files.length) {
+      dropZone.style.borderColor = '';
+      dropZone.style.background  = '';
+    }
+  });
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+      handleFileSelect(fileInput);
+    }
+  });
+
+  // Show spinner on submit
+  document.getElementById('upload-form').addEventListener('submit', () => {
+    submitBtn.disabled       = true;
+    submitBtn.style.opacity  = '.7';
+    btnLabel.textContent     = 'Importing…';
+  });
+</script>
+{% endblock %}

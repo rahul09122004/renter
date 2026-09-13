@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block title %}Rent Tracker — RentManager{% endblock %}
+{% block page_title %}Rent Tracker{% endblock %}
+{% block extra_styles %}
+.unit-badge { display:inline-block; padding:.2rem .65rem; border-radius:6px; font-size:.72rem; font-weight:600; border:1px solid; }
+.drawer-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:300; backdrop-filter:blur(4px); }
+.drawer-overlay.open { display:block; }
+.drawer { position:fixed; right:-500px; top:0; bottom:0; width:480px; background:var(--surface); border-left:1px solid var(--border2); z-index:301; overflow-y:auto; transition:right .3s cubic-bezier(.4,0,.2,1); display:flex; flex-direction:column; }
+.drawer.open { right:0; box-shadow:-20px 0 60px rgba(0,0,0,.5); }
+.receipt-card { background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(34,197,94,.03)); border:1px solid rgba(34,197,94,.2); border-radius:12px; padding:1.1rem; margin-bottom:.75rem; }
+.receipt-row { display:flex; justify-content:space-between; align-items:center; padding:.3rem 0; border-bottom:1px dashed rgba(255,255,255,.06); }
+.receipt-row:last-child { border-bottom:none; padding-top:.5rem; margin-top:.2rem; }
+{% endblock %}
+{% block content %}
+
+{% set paid_list    = tenants|selectattr('status','equalto','Paid')|list %}
+{% set pending_list = tenants|selectattr('status','equalto','Pending')|list %}
+{% set total_rent   = tenants|sum(attribute='amount') %}
+{% set collected    = paid_list|sum(attribute='amount') %}
+
+<!-- KPIs -->
+<div class="stat-grid fade-up d1">
+  <div class="stat-card c-green">
+    <i class="bi bi-check-circle stat-icon" style="color:var(--green)"></i>
+    <div class="stat-label">Collected</div>
+    <div class="stat-value" style="color:#4ade80">₹{{ "{:,.0f}".format(collected) }}</div>
+    <div class="stat-sub">{{ paid_list|length }} tenants paid</div>
+  </div>
+  <div class="stat-card c-amber">
+    <i class="bi bi-hourglass-split stat-icon" style="color:var(--amber)"></i>
+    <div class="stat-label">Pending</div>
+    <div class="stat-value" style="color:#fbbf24">₹{{ "{:,.0f}".format(total_rent - collected) }}</div>
+    <div class="stat-sub">{{ pending_list|length }} tenants pending</div>
+  </div>
+  <div class="stat-card c-gold">
+    <i class="bi bi-houses stat-icon" style="color:var(--gold)"></i>
+    <div class="stat-label">Total Units</div>
+    <div class="stat-value" style="color:var(--gold)">{{ tenants|length }}</div>
+    <div class="stat-sub">Active tenancies</div>
+  </div>
+  <div class="stat-card c-blue">
+    <i class="bi bi-percent stat-icon" style="color:var(--blue)"></i>
+    <div class="stat-label">Collection Rate</div>
+    {% set rate = ((collected / total_rent) * 100)|round(0)|int if total_rent > 0 else 0 %}
+    <div class="stat-value" style="color:#60a5fa">{{ rate }}%</div>
+    <div class="stat-sub">This month</div>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="data-table-wrap fade-up d2">
+  <div class="table-controls">
+    <div class="table-title">
+      <i class="bi bi-table" style="margin-right:6px;color:var(--gold);"></i>
+      All Units — {{ today.strftime("%B %Y") }}
+      <span style="font-size:.72rem;color:var(--text-faint);margin-left:8px;">· Click any row for details</span>
+    </div>
+    <a href="{{ url_for('add_renter') }}" class="btn btn-gold btn-sm"><i class="bi bi-plus-lg"></i> Add Renter</a>
+  </div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Unit</th><th>Renter</th><th>Phone</th>
+          <th style="text-align:right;">Rent (₹)</th>
+          <th>Due Day</th><th>Status</th><th>Paid On</th>
+          <th style="text-align:center;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tenants %}
+        {% set colors = ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
+        {% set color = colors[loop.index0 % colors|length] %}
+        {% set rec = record_by_tenant.get(t.id) %}
+        <tr {% if rec and rec.is_overdue(today) %}class="row-overdue"{% endif %}
+            style="cursor:pointer;" onclick="openDrawer({{ t.id }})">
+          <td>
+            <span class="unit-badge" style="background:{{ color }}18;color:{{ color }};border-color:{{ color }}35;">
+              {{ t.unit or '—' }}{% if t.unit_number %} #{{ t.unit_number }}{% endif %}
+            </span>
+          </td>
+          <td>
+            <div style="display:flex;align-items:center;gap:9px;">
+              <div style="width:32px;height:32px;border-radius:50%;background:{{ color }}25;border:2px solid {{ color }}45;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;color:{{ color }};flex-shrink:0;">{{ t.name[0].upper() }}</div>
+              <span style="font-weight:500;color:var(--text);">{{ t.name }}</span>
+            </div>
+          </td>
+          <td style="color:var(--text-dim);font-size:.82rem;">{{ t.phone }}</td>
+          <td style="font-weight:600;color:var(--text);text-align:right;">₹{{ "{:,.0f}".format(t.amount) }}</td>
+          <td style="color:var(--text-dim);">{{ t.get_due_day() }}th of every month</td>
+          <td>
+            {% if t.status=='Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
+            {% elif rec and rec.is_new_join_month() %}<span class="badge" style="background:var(--blue-bg);color:#60a5fa;border:1px solid rgba(59,130,246,.2);"><span class="b-dot" style="background:#60a5fa"></span>New Join</span>
+            {% elif rec and rec.is_overdue(today) %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Overdue</span>
+            {% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}
+          </td>
+          <td style="color:var(--text-faint);font-size:.82rem;">{{ t.payment_date.strftime("%d %b %Y") if t.payment_date else "—" }}</td>
+          <td onclick="event.stopPropagation()">
+            <div style="display:flex;gap:5px;justify-content:center;">
+              {% if t.status != 'Paid' %}
+              <a href="{{ url_for('verify_payment', tid=t.id) }}" class="btn btn-success btn-sm" title="Mark Paid"><i class="bi bi-check-lg"></i></a>
+              {% endif %}
+              <form method="POST" action="{{ url_for('remind_tenant', tid=t.id) }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="channel" value="whatsapp">
+                <button class="btn btn-ghost btn-sm" style="color:#4ade80;border-color:rgba(34,197,94,.25);" title="WhatsApp"><i class="bi bi-whatsapp"></i></button>
+              </form>
+              <a href="{{ url_for('edit_renter', tid=t.id) }}" class="btn btn-ghost btn-sm" title="Edit"><i class="bi bi-pencil"></i></a>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" style="text-align:center;padding:3rem;color:var(--text-faint);">No tenants. <a href="{{ url_for('add_renter') }}" style="color:var(--gold);">Add one</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Drawer overlay -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+
+<!-- Detail Drawer -->
+<div class="drawer" id="detailDrawer">
+  <!-- Sticky header -->
+  <div style="padding:1rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--surface);z-index:1;flex-shrink:0;">
+    <span style="font-weight:600;color:var(--text);font-size:.92rem;"><i class="bi bi-person-badge" style="margin-right:7px;color:var(--gold);"></i>Renter Details</span>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <span id="drawerMonthBadge" style="font-size:.7rem;color:var(--text-faint);background:var(--surface2);border:1px solid var(--border);padding:.18rem .6rem;border-radius:20px;"></span>
+      <button onclick="closeDrawer()" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.1rem;padding:.2rem .4rem;border-radius:6px;transition:color .2s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-faint)'"><i class="bi bi-x-lg"></i></button>
+    </div>
+  </div>
+  <!-- Content -->
+  <div id="drawerContent" style="padding:1.25rem;flex:1;">
+    <div style="text-align:center;color:var(--text-faint);padding:3rem;">Select a renter to view details</div>
+  </div>
+</div>
+
+<!-- Tenant data for JS -->
+<script>
+const TENANTS = {
+{% for t in tenants %}
+{{ t.id }}: {
+  id: {{ t.id }},
+  name: {{ t.name | tojson }},
+  phone: {{ t.phone | tojson }},
+  unit: {{ (t.unit or '') | tojson }},
+  unit_number: {{ (t.unit_number or '') | tojson }},
+  amount: {{ t.amount }},
+  due_date: {{ (t.get_due_day()|string + 'th of every month') | tojson }},
+  status: {{ t.status | tojson }},
+  is_new_join: {{ 'true' if record_by_tenant.get(t.id) and record_by_tenant.get(t.id).is_new_join_month() else 'false' }},
+  payment_date: {{ t.payment_date.strftime("%d %b %Y") | tojson if t.payment_date else 'null' }},
+  payment_method: {{ (t.payment_method or '') | tojson }},
+  transaction_id: {{ (t.transaction_id or '') | tojson }},
+  payment_screenshot: {{ (t.payment_screenshot or '') | tojson }},
+  deposit: {{ t.deposit or 0 }},
+  join_date: {{ t.join_date.strftime("%d %b %Y") | tojson if t.join_date else 'null' }},
+  notes: {{ (t.notes or '') | tojson }},
+  color: ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'][{{ loop.index0 % 7 }}],
+},
+{% endfor %}
+};
+
+const METHOD_ICONS  = {cash:'bi-cash-stack', upi_screenshot:'bi-phone', bank_transfer:'bi-building-fill'};
+const METHOD_LABELS = {cash:'Cash', upi_screenshot:'UPI / Screenshot', bank_transfer:'Bank Transfer'};
+
+function openDrawer(id) {
+  const t = TENANTS[id];
+  if (!t) return;
+
+  const isPaid   = t.status === 'Paid';
+  const sc       = t.color;
+  const icon     = METHOD_ICONS[t.payment_method]  || 'bi-credit-card';
+  const method   = METHOD_LABELS[t.payment_method] || (t.payment_method || '—');
+  const month    = new Date().toLocaleString('en-IN',{month:'long',year:'numeric'});
+
+  document.getElementById('drawerMonthBadge').textContent = month;
+
+  document.getElementById('drawerContent').innerHTML = `
+
+    <!-- Profile header -->
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:1.1rem;padding-bottom:1.1rem;border-bottom:1px solid var(--border);">
+      <div style="width:52px;height:52px;border-radius:50%;background:${sc}20;border:3px solid ${sc}50;display:flex;align-items:center;justify-content:center;font-size:1.25rem;font-weight:700;color:${sc};flex-shrink:0;">${t.name[0].toUpperCase()}</div>
+      <div style="flex:1;">
+        <div style="font-size:.98rem;font-weight:700;color:var(--text);">${t.name}</div>
+        <div style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap;">
+          ${t.unit ? `<span style="background:${sc}18;color:${sc};border:1px solid ${sc}35;padding:.12rem .55rem;border-radius:20px;font-size:.7rem;font-weight:600;">${t.unit}${t.unit_number?' #'+t.unit_number:''}</span>` : ''}
+          <span style="background:${isPaid?'rgba(34,197,94,.12)':(t.is_new_join?'rgba(59,130,246,.12)':'rgba(245,158,11,.12)')};color:${isPaid?'#4ade80':(t.is_new_join?'#60a5fa':'#fbbf24')};border:1px solid ${isPaid?'rgba(34,197,94,.25)':(t.is_new_join?'rgba(59,130,246,.25)':'rgba(245,158,11,.25)')};padding:.12rem .55rem;border-radius:20px;font-size:.7rem;font-weight:600;">${isPaid?'✓ Paid':(t.is_new_join?'🆕 New Join':'⏳ Pending')}</span>
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:1.1rem;font-weight:700;color:var(--gold);">₹${t.amount.toLocaleString('en-IN')}</div>
+        <div style="font-size:.68rem;color:var(--text-faint);">Monthly Rent</div>
+      </div>
+    </div>
+
+    <!-- PAID: Receipt card -->
+    ${isPaid ? `
+    <div class="receipt-card">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:.85rem;">
+        <i class="bi bi-receipt" style="color:#4ade80;font-size:1rem;"></i>
+        <span style="font-size:.75rem;font-weight:600;color:#4ade80;text-transform:uppercase;letter-spacing:.06em;">Payment Receipt — ${month}</span>
+      </div>
+      <div class="receipt-row">
+        <span style="font-size:.8rem;color:var(--text-faint);">Paid On</span>
+        <span style="font-size:.8rem;color:var(--text);font-weight:500;">${t.payment_date || '—'}</span>
+      </div>
+      <div class="receipt-row">
+        <span style="font-size:.8rem;color:var(--text-faint);">Payment Method</span>
+        <span style="font-size:.8rem;color:var(--text);font-weight:500;"><i class="bi ${icon}" style="margin-right:4px;"></i>${method}</span>
+      </div>
+      ${t.transaction_id && t.transaction_id !== 'Cash' ? `
+      <div class="receipt-row">
+        <span style="font-size:.8rem;color:var(--text-faint);">Transaction ID</span>
+        <span style="font-size:.74rem;color:var(--text);font-family:monospace;word-break:break-all;max-width:200px;text-align:right;">${t.transaction_id}</span>
+      </div>` : ''}
+      <div class="receipt-row" style="border-top:1px solid rgba(34,197,94,.2);margin-top:.4rem;">
+        <span style="font-size:.85rem;font-weight:600;color:var(--text);">Amount Paid</span>
+        <span style="font-size:1rem;font-weight:700;color:#4ade80;">₹${t.amount.toLocaleString('en-IN')}</span>
+      </div>
+    </div>
+
+    <!-- Payment Screenshot -->
+    ${t.payment_screenshot ? `
+    <div style="border-radius:10px;overflow:hidden;margin-bottom:.75rem;border:1px solid var(--border2);">
+      <div style="padding:.6rem 1rem;background:var(--surface2);display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:.75rem;font-weight:500;color:var(--text-dim);"><i class="bi bi-image" style="margin-right:5px;color:#60a5fa;"></i>Payment Screenshot</span>
+        <a href="/static/uploads/${t.payment_screenshot}" target="_blank" style="font-size:.72rem;color:#60a5fa;text-decoration:none;"><i class="bi bi-box-arrow-up-right" style="margin-right:3px;"></i>Open Full</a>
+      </div>
+      <div style="background:#0a0a0a;text-align:center;padding:.75rem;">
+        <img src="/static/uploads/${t.payment_screenshot}"
+             alt="Payment proof"
+             style="max-height:220px;max-width:100%;border-radius:8px;cursor:zoom-in;transition:transform .2s;"
+             onmouseover="this.style.transform='scale(1.02)'"
+             onmouseout="this.style.transform='scale(1)'"
+             onclick="window.open('/static/uploads/${t.payment_screenshot}','_blank')"
+             onerror="this.parentElement.innerHTML='<div style=\\'padding:1rem;color:var(--text-faint);font-size:.8rem;\\'>Screenshot not available</div>'">
+      </div>
+    </div>` : (t.payment_method==='upi_screenshot' ? `
+    <div style="background:var(--amber-bg);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:.65rem .9rem;margin-bottom:.75rem;font-size:.78rem;color:#fbbf24;">
+      <i class="bi bi-exclamation-triangle" style="margin-right:5px;"></i>No screenshot saved for this UPI payment.
+    </div>` : '')}
+
+    <!-- Action buttons for PAID tenant -->
+    <div style="display:flex;flex-direction:column;gap:.5rem;margin-bottom:.75rem;">
+      <div class="mob-stack" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;">
+        <a href="/renters/detail/${t.id}" class="btn btn-ghost" style="justify-content:center;font-size:.8rem;"><i class="bi bi-eye"></i> Full Details</a>
+        <button onclick="showEditPayment(${t.id})" class="btn btn-ghost" style="justify-content:center;font-size:.8rem;color:#60a5fa;border-color:rgba(59,130,246,.25);"><i class="bi bi-pencil-square"></i> Edit Payment</button>
+      </div>
+      <form method="POST" action="/tenant/mark-unpaid/${t.id}" onsubmit="return confirm('Mark ${t.name} as unpaid? This will clear the payment record.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-danger" style="width:100%;justify-content:center;font-size:.8rem;"><i class="bi bi-x-circle"></i> Mark as Unpaid</button>
+      </form>
+    </div>
+
+    <!-- Edit payment form (hidden by default) -->
+    <div id="editPayForm_${t.id}" style="display:none;background:var(--surface2);border-radius:10px;padding:1rem;margin-bottom:.75rem;border:1px solid var(--border2);">
+      <div style="font-size:.72rem;color:var(--gold);font-weight:600;margin-bottom:.85rem;text-transform:uppercase;letter-spacing:.06em;"><i class="bi bi-pencil-square" style="margin-right:5px;"></i>Edit Payment Details</div>
+      <form method="POST" action="/tenant/force-paid/${t.id}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="margin-bottom:.7rem;">
+          <label style="font-size:.74rem;color:var(--text-dim);display:block;margin-bottom:.28rem;">Method</label>
+          <select name="method" class="form-control" style="font-size:.82rem;">
+            <option value="cash" ${t.payment_method==='cash'?'selected':''}>Cash</option>
+            <option value="upi_screenshot" ${t.payment_method==='upi_screenshot'?'selected':''}>UPI / Screenshot</option>
+            <option value="bank_transfer" ${t.payment_method==='bank_transfer'?'selected':''}>Bank Transfer</option>
+          </select>
+        </div>
+        <div style="margin-bottom:.85rem;">
+          <label style="font-size:.74rem;color:var(--text-dim);display:block;margin-bottom:.28rem;">Transaction ID / Reference</label>
+          <input class="form-control" name="transaction_id" value="${t.transaction_id||''}" placeholder="UPI ref / UTR / receipt no." style="font-size:.82rem;">
+        </div>
+        <input type="hidden" name="screenshot_fn" value="${t.payment_screenshot||''}">
+        <div style="display:flex;gap:.5rem;">
+          <button type="submit" class="btn btn-gold btn-sm" style="flex:1;justify-content:center;"><i class="bi bi-check-lg"></i> Save</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('editPayForm_${t.id}').style.display='none'" style="flex:1;justify-content:center;">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    ` : `
+    <!-- PENDING / NEW JOIN: action -->
+    <div style="background:${t.is_new_join?'rgba(59,130,246,.08)':'var(--amber-bg)'};border:1px solid ${t.is_new_join?'rgba(59,130,246,.2)':'rgba(245,158,11,.2)'};border-radius:10px;padding:.85rem 1rem;margin-bottom:.85rem;display:flex;align-items:center;gap:10px;">
+      <i class="bi ${t.is_new_join?'bi-stars':'bi-hourglass-split'}" style="color:${t.is_new_join?'#60a5fa':'#fbbf24'};font-size:1.1rem;flex-shrink:0;"></i>
+      <div>
+        <div style="font-size:.82rem;font-weight:600;color:${t.is_new_join?'#60a5fa':'#fbbf24'};">${t.is_new_join?'New Join — first month billed next cycle':'Rent Pending'}</div>
+        <div style="font-size:.75rem;color:var(--text-dim);margin-top:2px;">${t.is_new_join?`Joined ${t.join_date||'this month'} · rent for this month will be collected along with next month's rent`:`Due: ${t.due_date} · ₹${t.amount.toLocaleString('en-IN')}`}</div>
+      </div>
+    </div>
+    <a href="/tenant/verify-payment/${t.id}" class="btn btn-success" style="width:100%;justify-content:center;margin-bottom:.5rem;"><i class="bi bi-check-lg"></i> Mark as Paid${t.is_new_join?' Early (optional)':''}</a>
+    `}
+
+    <!-- Contact & info -->
+    <div style="background:var(--surface2);border-radius:10px;padding:.85rem 1rem;margin-bottom:.65rem;">
+      <div style="font-size:.65rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.55rem;">Contact & Details</div>
+      <div style="font-size:.82rem;color:var(--text-dim);margin-bottom:.3rem;"><i class="bi bi-phone" style="margin-right:6px;width:14px;color:var(--text-faint);"></i>${t.phone}</div>
+      <div style="font-size:.82rem;color:var(--text-dim);margin-bottom:.3rem;"><i class="bi bi-safe" style="margin-right:6px;width:14px;color:var(--text-faint);"></i>Deposit: ₹${t.deposit.toLocaleString('en-IN')}</div>
+      ${t.join_date ? `<div style="font-size:.78rem;color:var(--text-faint);margin-bottom:.3rem;"><i class="bi bi-calendar-check" style="margin-right:6px;width:14px;"></i>Joined ${t.join_date}</div>` : ''}
+      ${t.notes ? `<div style="font-size:.78rem;color:var(--text-dim);margin-top:.4rem;padding-top:.4rem;border-top:1px solid var(--border);"><i class="bi bi-sticky" style="margin-right:6px;color:var(--text-faint);"></i>${t.notes}</div>` : ''}
+    </div>
+
+    <!-- Bottom actions -->
+    <div class="mob-stack" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;">
+      <a href="/renters/edit/${t.id}" class="btn btn-ghost" style="justify-content:center;font-size:.8rem;"><i class="bi bi-person-gear"></i> Edit Profile</a>
+      <form method="POST" action="/tenant/remind/${t.id}" style="display:contents;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="channel" value="whatsapp">
+        <button class="btn btn-ghost" style="justify-content:center;font-size:.8rem;color:#4ade80;border-color:rgba(34,197,94,.25);"><i class="bi bi-whatsapp"></i> Remind</button>
+      </form>
+    </div>
+  `;
+
+  document.getElementById('detailDrawer').classList.add('open');
+  document.getElementById('drawerOverlay').classList.add('open');
+}
+
+function showEditPayment(id) {
+  const el = document.getElementById('editPayForm_' + id);
+  if (el) { el.style.display = 'block'; el.scrollIntoView({behavior:'smooth', block:'nearest'}); }
+}
+
+function closeDrawer() {
+  document.getElementById('detailDrawer').classList.remove('open');
+  document.getElementById('drawerOverlay').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+</script>
+{% endblock %}

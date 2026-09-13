@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}{{ action }} Renter — RentManager{% endblock %}
+{% block page_title %}{{ action }} Renter{% endblock %}
+{% block content %}
+<div style="max-width:780px;" class="fade-up d1">
+  <div class="card">
+    <div class="card-header">
+      <span><i class="bi bi-person-{% if action=='Add' %}plus{% else %}pencil{% endif %}" style="margin-right:7px;color:var(--gold);"></i>{{ action }} Renter</span>
+      <a href="{{ url_for('renters') }}" class="btn btn-ghost btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
+    <div class="card-body">
+      <form method="POST" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <!-- Section: Personal Info -->
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);margin-bottom:.6rem;">Personal Info</div>
+        <div class="form-grid form-grid-2" style="margin-bottom:1.25rem;">
+          <div class="form-group">
+            <label>Full Name <span style="color:var(--red)">*</span></label>
+            <input class="form-control" name="name" required value="{{ tenant.name if tenant else '' }}" placeholder="Arjun Sharma">
+          </div>
+          <div class="form-group">
+            <label>Phone <span style="color:var(--red)">*</span></label>
+            <input class="form-control" name="phone" required value="{{ tenant.phone if tenant else '' }}" placeholder="919876543210">
+          </div>
+          <div class="form-group">
+            <label>Profile Photo</label>
+            <input class="form-control" name="photo" type="file" accept="image/*" style="padding:.4rem .85rem;">
+            {% if tenant and tenant.photo_path %}
+            <div style="font-size:.72rem;color:var(--green);margin-top:3px;"><i class="bi bi-check-circle"></i> Photo uploaded</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Section: Unit & Rent -->
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);margin-bottom:.6rem;">Unit & Rent</div>
+        <div class="form-grid form-grid-2" style="margin-bottom:1.25rem;">
+          <div class="form-group">
+            <label>Unit Type <span style="color:var(--red)">*</span></label>
+            <select class="form-control" name="unit" required>
+              <option value="">— Select Unit —</option>
+              {% set unit_options = ['Shop', '1 BHK', '2 BHK', '3 BHK', 'Studio', 'Office', 'Garage', 'Other'] %}
+              {% for opt in unit_options %}
+              <option value="{{ opt }}" {% if tenant and tenant.unit == opt %}selected{% endif %}>{{ opt }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Unit / Flat Number</label>
+            <input class="form-control" name="unit_number" value="{{ tenant.unit_number if tenant and tenant.unit_number else '' }}" placeholder="e.g. 101, A-2, Ground Floor">
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Optional identifier for the specific unit</div>
+          </div>
+          <div class="form-group">
+            <label>Monthly Rent (₹) <span style="color:var(--red)">*</span></label>
+            <input class="form-control" name="amount" type="number" step="0.01" required value="{{ tenant.amount if tenant else '' }}" placeholder="18000">
+          </div>
+          <div class="form-group">
+            <label>Security Deposit (₹)</label>
+            <input class="form-control" name="deposit" type="number" step="0.01" value="{{ tenant.deposit if tenant else 0 }}" placeholder="50000">
+          </div>
+          <div class="form-group">
+            <label>Rent Due Day <span style="color:var(--red)">*</span></label>
+            <input class="form-control" name="due_day" type="number" min="1" max="31" required
+              value="{{ tenant.get_due_day() if tenant else 5 }}" placeholder="5">
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Day of every month (e.g. 5 = rent due on 5th of each month)</div>
+          </div>
+          <div class="form-group">
+            <label>Join Date</label>
+            <input class="form-control" name="join_date" type="date" value="{{ tenant.join_date.strftime('%Y-%m-%d') if tenant and tenant.join_date else '' }}">
+          </div>
+        </div>
+
+        <!-- Section: Occupancy Status -->
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);margin-bottom:.6rem;">Occupancy Status</div>
+        <div class="form-grid form-grid-2" style="margin-bottom:1.25rem;">
+          <div class="form-group">
+            <label>Status</label>
+            <select class="form-control" name="occupancy_status" id="occupancy_status" onchange="toggleVacated(this.value)">
+              <option value="Active" {% if not tenant or tenant.occupancy_status != 'Vacated' %}selected{% endif %}>🟢 Active — Currently occupying</option>
+              <option value="Vacated" {% if tenant and tenant.occupancy_status == 'Vacated' %}selected{% endif %}>🔴 Vacated — Has left the unit</option>
+            </select>
+          </div>
+          <div class="form-group" id="vacated_date_group" style="display:{% if tenant and tenant.occupancy_status == 'Vacated' %}flex{% else %}none{% endif %};">
+            <label>Vacated Date</label>
+            <input class="form-control" name="vacated_date" type="date" value="{{ tenant.vacated_date.strftime('%Y-%m-%d') if tenant and tenant.vacated_date else '' }}">
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Records kept. Unit freed for new renter.</div>
+          </div>
+        </div>
+
+        <!-- Section: Documents & Notes -->
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);margin-bottom:.6rem;">Documents & Notes</div>
+        <div class="form-grid form-grid-2" style="margin-bottom:1rem;">
+          <div class="form-group">
+            <label>Rent Agreement (PDF/Image)</label>
+            <input class="form-control" name="agreement" type="file" accept=".pdf,image/*" style="padding:.4rem .85rem;">
+            {% if tenant and tenant.agreement_path %}
+            <div style="font-size:.72rem;color:var(--green);margin-top:3px;"><i class="bi bi-check-circle"></i> Agreement uploaded</div>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            <label>Notes</label>
+            <textarea class="form-control" name="notes" placeholder="Any additional notes...">{{ tenant.notes if tenant else '' }}</textarea>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;padding-top:.5rem;border-top:1px solid var(--border);">
+          <button type="submit" class="btn btn-gold"><i class="bi bi-check-lg"></i> {{ action }} Renter</button>
+          <a href="{{ url_for('renters') }}" class="btn btn-ghost">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function toggleVacated(val) {
+  document.getElementById('vacated_date_group').style.display = val === 'Vacated' ? 'flex' : 'none';
+}
+</script>
+{% endblock %}

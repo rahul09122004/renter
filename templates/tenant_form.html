@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ action }} Tenant — RentManager{% endblock %}
+{% block page_title %}{{ action }} Tenant{% endblock %}
+{% block content %}
+<div style="max-width:560px;" class="fade-up d1">
+  <div class="card">
+    <div class="card-header">
+      <span><i class="bi bi-person-{% if action=='Add' %}plus{% else %}pencil{% endif %}" style="margin-right:7px;color:var(--gold);"></i>{{ action }} Tenant</span>
+      <a href="{{ url_for('dashboard') }}" class="btn btn-ghost btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group" style="margin-bottom:1rem;">
+          <label>Full Name *</label>
+          <input class="form-control" name="name" required value="{{ tenant.name if tenant else '' }}" placeholder="Arjun Sharma">
+        </div>
+        <div class="form-group" style="margin-bottom:1rem;">
+          <label>Phone (E.164) *</label>
+          <input class="form-control" name="phone" required value="{{ tenant.phone if tenant else '' }}" placeholder="919876543210">
+        </div>
+        <div class="form-group" style="margin-bottom:1rem;">
+          <label>Monthly Rent (₹) *</label>
+          <input class="form-control" name="amount" type="number" step="0.01" required value="{{ tenant.amount if tenant else '' }}" placeholder="18000">
+        </div>
+        <div class="form-group" style="margin-bottom:1.5rem;">
+          <label>Due Day (1–31) *</label>
+          <input class="form-control" name="due_day" type="number" min="1" max="31" required
+            value="{{ tenant.get_due_day() if tenant else 5 }}" placeholder="5">
+          <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Day of month rent is due (e.g. 5 = 5th of every month)</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button type="submit" class="btn btn-gold"><i class="bi bi-check-lg"></i> {{ action }} Tenant</button>
+          <a href="{{ url_for('dashboard') }}" class="btn btn-ghost">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

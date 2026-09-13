@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Update Rent & Deposit — {{ tenant.name }}{% endblock %}
+{% block page_title %}Update Rent & Deposit{% endblock %}
+{% block content %}
+<div style="max-width:780px;" class="fade-up d1">
+
+  <!-- Header card -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-header">
+      <span>
+        <i class="bi bi-currency-rupee" style="margin-right:7px;color:var(--gold);"></i>
+        Update Rent &amp; Deposit — {{ tenant.name }}
+      </span>
+      <a href="{{ url_for('renter_detail', tid=tenant.id) }}" class="btn btn-ghost btn-sm">
+        <i class="bi bi-arrow-left"></i> Back
+      </a>
+    </div>
+    <div class="card-body">
+
+      <!-- Current values summary -->
+      <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1.5rem;padding:1rem;background:var(--surface2);border-radius:10px;">
+        <div>
+          <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);">Current Rent</div>
+          <div style="font-size:1.4rem;font-weight:700;color:var(--gold);">₹{{ "{:,.0f}".format(tenant.amount) }}</div>
+        </div>
+        <div>
+          <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);">Current Deposit (Advance)</div>
+          <div style="font-size:1.4rem;font-weight:700;color:var(--text-dim);">₹{{ "{:,.0f}".format(tenant.deposit or 0) }}</div>
+        </div>
+        <div>
+          <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);">Unit</div>
+          <div style="font-size:1rem;color:var(--text-dim);">{{ tenant.unit or '—' }} {{ tenant.unit_number or '' }}</div>
+        </div>
+        <div>
+          <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);">Join Date</div>
+          <div style="font-size:1rem;color:var(--text-dim);">{{ tenant.join_date.strftime("%d %b %Y") if tenant.join_date else "—" }}</div>
+        </div>
+      </div>
+
+      <!-- Update form -->
+      <form method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);margin-bottom:.6rem;">New Values</div>
+        <div class="form-grid form-grid-2" style="margin-bottom:1.25rem;">
+          <div class="form-group">
+            <label>New Monthly Rent (₹) <span style="color:var(--red)">*</span></label>
+            <input class="form-control" name="new_amount" type="number" step="0.01" required
+              value="{{ tenant.amount }}" placeholder="20000">
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Current: ₹{{ "{:,.0f}".format(tenant.amount) }}</div>
+          </div>
+          <div class="form-group">
+            <label>New Security Deposit / Advance (₹)</label>
+            <input class="form-control" name="new_deposit" type="number" step="0.01"
+              value="{{ tenant.deposit or 0 }}" placeholder="55000">
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Current: ₹{{ "{:,.0f}".format(tenant.deposit or 0) }}</div>
+          </div>
+        </div>
+
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);margin-bottom:.6rem;">Effective From</div>
+        <div class="form-grid form-grid-2" style="margin-bottom:1.25rem;">
+          <div class="form-group">
+            <label>Month <span style="color:var(--red)">*</span></label>
+            <select class="form-control" name="effective_month">
+              {% for m in range(1, 13) %}
+              <option value="{{ m }}" {% if m == today.month %}selected{% endif %}>
+                {{ ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m-1] }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Year <span style="color:var(--red)">*</span></label>
+            <select class="form-control" name="effective_year">
+              {% for y in range(today.year - 1, today.year + 3) %}
+              <option value="{{ y }}" {% if y == today.year %}selected{% endif %}>{{ y }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.25rem;">
+          <label>Reason / Notes</label>
+          <input class="form-control" name="notes" placeholder="e.g. Annual revision, market rate increase…">
+        </div>
+
+        <div style="display:flex;gap:8px;padding-top:.5rem;border-top:1px solid var(--border);">
+          <button type="submit" class="btn btn-gold">
+            <i class="bi bi-check-lg"></i> Save Update
+          </button>
+          <a href="{{ url_for('renter_detail', tid=tenant.id) }}" class="btn btn-ghost">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Revision history -->
+  {% if history %}
+  <div class="card">
+    <div class="card-header">
+      <span><i class="bi bi-clock-history" style="margin-right:6px;color:var(--gold);"></i>Revision History</span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="table" style="margin:0;">
+        <thead>
+          <tr>
+            <th>Effective From</th>
+            <th>Old Rent</th>
+            <th>New Rent</th>
+            <th>Old Deposit</th>
+            <th>New Deposit</th>
+            <th>Notes</th>
+            <th>Changed On</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for h in history %}
+          <tr>
+            <td style="color:var(--gold);font-weight:600;">
+              {{ h.effective_from.strftime("%b %Y") if h.effective_from else "—" }}
+            </td>
+            <td style="color:var(--text-faint);text-decoration:line-through;">₹{{ "{:,.0f}".format(h.old_amount) }}</td>
+            <td style="color:var(--green);font-weight:600;">₹{{ "{:,.0f}".format(h.new_amount) }}</td>
+            <td style="color:var(--text-faint);text-decoration:line-through;">₹{{ "{:,.0f}".format(h.old_deposit) }}</td>
+            <td style="color:var(--text-dim);">₹{{ "{:,.0f}".format(h.new_deposit) }}</td>
+            <td style="color:var(--text-dim);font-size:.82rem;">{{ h.notes or "—" }}</td>
+            <td style="color:var(--text-faint);font-size:.78rem;">{{ h.changed_at.strftime("%d %b %Y") if h.changed_at else "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

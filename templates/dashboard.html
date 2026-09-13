@@ -1,0 +1,324 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — RentManager{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block extra_head %}
+<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" />
+{% endblock %}
+{% block content %}
+
+{% set paid_count = tenants|selectattr('status','equalto','Paid')|list|length %}
+{% set pending_count = tenants|selectattr('status','equalto','Pending')|list|length %}
+{% set collection_pct = ((collected / (collected + pending_amt)) * 100)|round(0)|int if (collected + pending_amt) > 0 else 0 %}
+
+<!-- KPI Cards -->
+<div class="stat-grid fade-up d1">
+  <div class="stat-card c-green">
+    <i class="bi bi-check-circle stat-icon" style="color:var(--green)"></i>
+    <div class="stat-label">Collected This Month</div>
+    <div class="stat-value" style="color:#4ade80">₹{{ "{:,.0f}".format(collected) }}</div>
+    <div class="stat-sub">{{ paid_count }} of {{ total }} tenants paid</div>
+  </div>
+  <div class="stat-card c-amber">
+    <i class="bi bi-hourglass-split stat-icon" style="color:var(--amber)"></i>
+    <div class="stat-label">Pending Amount</div>
+    <div class="stat-value" style="color:#fbbf24">₹{{ "{:,.0f}".format(pending_amt) }}</div>
+    <div class="stat-sub">{{ pending_count }} tenants pending</div>
+  </div>
+  <div class="stat-card c-red">
+    <i class="bi bi-exclamation-triangle stat-icon" style="color:var(--red)"></i>
+    <div class="stat-label">Total Expenses</div>
+    <div class="stat-value" style="color:#f87171">₹{{ "{:,.0f}".format(total_common + total_building) }}</div>
+    <div class="stat-sub">Common + Building</div>
+  </div>
+  <div class="stat-card c-blue">
+    <i class="bi bi-graph-up-arrow stat-icon" style="color:var(--blue)"></i>
+    <div class="stat-label">Net Position</div>
+    {% set net = collected - total_common - total_building %}
+    <div class="stat-value" style="color:{% if net >= 0 %}#4ade80{% else %}#f87171{% endif %}">₹{{ "{:,.0f}".format(net|abs) }}</div>
+    <div class="stat-sub">{% if net >= 0 %}Surplus{% else %}Deficit{% endif %} this month</div>
+  </div>
+</div>
+
+<!-- Collection Bar + Overdue Alerts -->
+{% if overdue %}
+<div class="card fade-up d2" style="margin-bottom:1rem;border-color:rgba(239,68,68,.25);background:var(--red-bg);">
+  <div class="card-body" style="display:flex;align-items:center;gap:12px;padding:.9rem 1.4rem;">
+    <i class="bi bi-exclamation-triangle" style="color:#f87171;font-size:1.1rem;flex-shrink:0;"></i>
+    <div style="flex:1;">
+      <div style="font-size:.85rem;color:#f87171;font-weight:500;">{{ overdue|length }} overdue payment{{ 's' if overdue|length > 1 }}</div>
+      <div style="font-size:.78rem;color:var(--text-dim);margin-top:2px;">
+        {{ overdue|map(attribute='name')|join(', ') }}
+      </div>
+    </div>
+    <a href="{{ url_for('rent_tracker') }}" class="btn btn-danger btn-sm">View Tracker</a>
+  </div>
+</div>
+{% endif %}
+
+<!-- Charts Row -->
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:1rem;margin-bottom:1.5rem;" class="fade-up d3">
+
+  <!-- Income Chart -->
+  <div class="card">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <span><i class="bi bi-bar-chart" style="margin-right:6px;color:var(--gold);"></i>6-Month Income Trend</span>
+      <div id="incomeLegend" style="display:flex;gap:14px;font-size:.72rem;color:var(--text-faint);">
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#4ade80;display:inline-block;"></span>Current month</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:rgba(232,160,32,.55);display:inline-block;"></span>Past months</span>
+      </div>
+    </div>
+    <div class="card-body" style="padding-bottom:.5rem;">
+      <div style="height:210px;"><canvas id="incomeChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Expense Pie -->
+  <div class="card">
+    <div class="card-header"><span><i class="bi bi-pie-chart" style="margin-right:6px;color:var(--blue);"></i>Expense Breakdown</span></div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:.75rem;padding-bottom:.75rem;">
+      <div style="height:180px;"><canvas id="expenseChart"></canvas></div>
+      <!-- Category legend below -->
+      <div id="expenseLegend" style="display:flex;flex-direction:column;gap:4px;max-height:130px;overflow-y:auto;"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Collection Progress + Quick Actions -->
+<div style="display:grid;grid-template-columns:1fr 300px;gap:1rem;margin-bottom:1.5rem;" class="fade-up d4">
+  <div class="card">
+    <div class="card-header"><span><i class="bi bi-check2-all" style="margin-right:6px;color:var(--green);"></i>Collection Status</span></div>
+    <div class="card-body">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;">
+        <span style="font-size:.82rem;color:var(--text-dim);">{{ collection_pct }}% collected</span>
+        <span style="font-size:.82rem;color:var(--text-dim);">₹{{ "{:,.0f}".format(collected) }} / ₹{{ "{:,.0f}".format(collected + pending_amt) }}</span>
+      </div>
+      <div style="background:var(--surface2);border-radius:6px;height:10px;overflow:hidden;margin-bottom:1.2rem;">
+        <div style="width:{{ collection_pct }}%;background:linear-gradient(90deg,var(--green),#16a34a);height:100%;border-radius:6px;transition:width .6s ease;"></div>
+      </div>
+      <div class="mob-stack" style="display:grid;grid-template-columns:repeat(3,1fr);gap:.7rem;">
+        {% for t in tenants %}
+        {% set rec = record_by_tenant.get(t.id) %}
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="font-size:.72rem;color:var(--text-faint);">{{ t.unit or 'Unit ' ~ loop.index }}</div>
+          <div style="height:6px;border-radius:3px;background:{% if t.status=='Paid' %}var(--green){% elif rec and rec.is_new_join_month() %}var(--blue){% elif rec and rec.is_overdue(today) %}var(--red){% else %}var(--amber){% endif %};"></div>
+          <div style="font-size:.68rem;color:var(--text-faint);">₹{{ "{:,.0f}".format(t.amount) }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Quick Actions</div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+      <a href="{{ url_for('add_renter') }}" class="btn btn-gold" style="width:100%;justify-content:center;">
+        <i class="bi bi-person-plus"></i> Add Renter
+      </a>
+      <button class="btn btn-ghost" style="width:100%;justify-content:center;color:#4ade80;border-color:rgba(34,197,94,.25);" onclick="triggerReminders(this)">
+        <i class="bi bi-whatsapp"></i> Send Reminders
+      </button>
+      <a href="{{ url_for('rent_tracker') }}" class="btn btn-ghost" style="width:100%;justify-content:center;">
+        <i class="bi bi-currency-rupee"></i> Rent Tracker
+      </a>
+      <a href="{{ url_for('ca_audit') }}" class="btn btn-ghost" style="width:100%;justify-content:center;color:#a78bfa;border-color:rgba(167,139,250,.25);">
+        <i class="bi bi-shield-check"></i> CA Audit
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Tenant Table -->
+<div class="data-table-wrap fade-up d5">
+  <div class="table-controls">
+    <div class="table-title">All Tenants — {{ today.strftime("%B %Y") }}</div>
+  </div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead><tr>
+        <th>Renter</th><th>Unit</th><th>Amount</th><th>Due</th><th>Status</th><th>Paid On</th><th>Actions</th>
+      </tr></thead>
+      <tbody>
+        {% for t in tenants %}
+        {% set rec = record_by_tenant.get(t.id) %}
+        <tr {% if rec and rec.is_overdue(today) %}class="row-overdue"{% endif %}>
+          <td>
+            <div style="display:flex;align-items:center;gap:9px;">
+              <div style="width:30px;height:30px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:600;color:var(--gold);flex-shrink:0;">{{ t.name[0].upper() }}</div>
+              <div>
+                <div style="font-weight:500;color:var(--text);font-size:.84rem;">{{ t.name }}</div>
+                <div style="font-size:.72rem;color:var(--text-faint);">{{ t.phone }}</div>
+              </div>
+            </div>
+          </td>
+          <td style="color:var(--text-dim);">{{ t.unit or '—' }}</td>
+          <td style="font-weight:600;color:var(--text);">₹{{ "{:,.0f}".format(t.amount) }}</td>
+          <td style="color:var(--text-dim);">{{ t.get_due_day() }}th</td>
+          <td>
+            {% if t.status=='Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
+            {% elif rec and rec.is_new_join_month() %}<span class="badge" style="background:var(--blue-bg);color:#60a5fa;border:1px solid rgba(59,130,246,.2);"><span class="b-dot" style="background:#60a5fa"></span>New Join</span>
+            {% elif rec and rec.is_overdue(today) %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Overdue</span>
+            {% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}
+          </td>
+          <td style="color:var(--text-faint);font-size:.8rem;">{{ t.payment_date.strftime("%d %b") if t.payment_date else "—" }}</td>
+          <td>
+            <div style="display:flex;gap:5px;">
+              {% if t.status != 'Paid' %}
+              <form method="POST" action="{{ url_for('mark_paid', tid=t.id) }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-success btn-sm"><i class="bi bi-check-lg"></i></button>
+              </form>{% endif %}
+              <a href="{{ url_for('edit_renter', tid=t.id) }}" class="btn btn-ghost btn-sm"><i class="bi bi-pencil"></i></a>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center;padding:2.5rem;color:var(--text-faint);">No tenants found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+function loadCharts() {
+  const data    = {{ chart_data | safe }};
+  const monthly = data.monthly_income || {};
+  const labels  = Object.keys(monthly);
+  const values  = Object.values(monthly);
+  const todayLabel = new Date().toLocaleString('en-US', {month:'short'});
+
+  // ── Income Bar Chart ──────────────────────────────────────────────────────
+  const ctx1  = document.getElementById('incomeChart').getContext('2d');
+  const maxVal = Math.max(...values, 1);
+
+  // Per-bar colours: current month = green, past = gold
+  const barColors  = labels.map(l => l === todayLabel ? 'rgba(74,222,128,.75)' : 'rgba(232,160,32,.55)');
+  const borderColors = labels.map(l => l === todayLabel ? '#4ade80' : '#e8a020');
+
+  new Chart(ctx1, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Collected (₹)',
+        data: values,
+        backgroundColor: barColors,
+        borderColor: borderColors,
+        borderWidth: 1.5,
+        borderRadius: 5,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: t => t[0].label,
+            label: c => ' ₹' + c.raw.toLocaleString('en-IN')
+          },
+          backgroundColor: '#1e2535', borderColor: 'rgba(255,255,255,0.08)',
+          borderWidth: 1, titleColor: '#e8eaf0', bodyColor: '#8b93a8', padding: 10
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          suggestedMax: maxVal * 1.15,
+          grid: { color: 'rgba(255,255,255,0.05)' },
+          ticks: {
+            color: '#4a5168',
+            callback: v => v === 0 ? '₹0' : '₹' + (v >= 100000 ? (v/100000).toFixed(1)+'L' : (v/1000).toFixed(0)+'k')
+          },
+          border: { display: false }
+        },
+        x: {
+          grid: { display: false },
+          ticks: {
+            color: ctx => ctx.tick.label === todayLabel ? '#4ade80' : '#4a5168',
+            font: ctx => ({ weight: ctx.tick.label === todayLabel ? '700' : '400' })
+          },
+          border: { display: false }
+        }
+      }
+    }
+  });
+
+
+  // ── Expense Doughnut ──────────────────────────────────────────────────────
+  const pieLabels  = ['Common', 'Building', 'Net Income'];
+  const pieValues  = [
+    data.total_common   || 0,
+    data.total_building || 0,
+    Math.max(0, (data.collected || 0) - (data.total_common || 0) - (data.total_building || 0))
+  ];
+  const pieColors  = ['rgba(59,130,246,.7)', 'rgba(239,68,68,.7)', 'rgba(34,197,94,.7)'];
+  const pieBorders = ['#3b82f6', '#ef4444', '#22c55e'];
+
+  const ctx2 = document.getElementById('expenseChart').getContext('2d');
+  new Chart(ctx2, {
+    type: 'doughnut',
+    data: {
+      labels: pieLabels,
+      datasets: [{ data: pieValues, backgroundColor: pieColors, borderColor: pieBorders, borderWidth: 1.5, hoverOffset: 6 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: c => ' ₹' + c.raw.toLocaleString('en-IN'),
+            afterLabel: c => {
+              const total = c.dataset.data.reduce((a,b)=>a+b, 0);
+              return total > 0 ? '  ' + ((c.raw/total)*100).toFixed(1) + '%' : '';
+            }
+          },
+          backgroundColor: '#1e2535', borderColor: 'rgba(255,255,255,0.08)',
+          borderWidth: 1, titleColor: '#e8eaf0', bodyColor: '#8b93a8', padding: 10
+        }
+      },
+      cutout: '62%'
+    }
+  });
+
+  // Build custom legend below the pie
+  const legendEl = document.getElementById('expenseLegend');
+  if (legendEl) {
+    const total = pieValues.reduce((a,b)=>a+b,0);
+    legendEl.innerHTML = pieLabels.map((lbl, i) => {
+      const pct = total > 0 ? ((pieValues[i]/total)*100).toFixed(1) : '0.0';
+      const color = pieBorders[i] || '#888';
+      return `<div style="display:flex;align-items:center;gap:7px;font-size:.72rem;">
+        <span style="width:9px;height:9px;border-radius:2px;background:${color};flex-shrink:0;"></span>
+        <span style="color:var(--text-dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${lbl}">${lbl}</span>
+        <span style="color:var(--text-faint);font-variant-numeric:tabular-nums;">₹${pieValues[i].toLocaleString('en-IN')}</span>
+        <span style="color:var(--text-faint);font-variant-numeric:tabular-nums;min-width:38px;text-align:right;">${pct}%</span>
+      </div>`;
+    }).join('');
+  }
+}
+loadCharts();
+
+async function triggerReminders(btn) {
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Sending...';
+  try {
+    const r = await fetch('/api/trigger-reminders', { method: 'POST', headers: {'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content} });
+    const d = await r.json();
+    alert('Reminders sent to ' + d.sent + ' tenant(s).');
+  } catch(e) { alert('Error: ' + e.message); }
+  btn.disabled = false; btn.innerHTML = orig;
+}
+
+}); // end DOMContentLoaded
+</script>
+{% endblock %}

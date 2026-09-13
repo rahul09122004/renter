@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Building Expenses — RentManager{% endblock %}
+{% block page_title %}Building Expenses{% endblock %}
+{% block extra_head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>{% endblock %}
+{% block content %}
+
+{% set total = expenses|sum(attribute='amount') %}
+{% if expenses %}{% set max_exp = expenses|max(attribute='amount') %}{% endif %}
+
+<div class="stat-grid fade-up d1">
+  <div class="stat-card c-red">
+    <i class="bi bi-house-gear stat-icon" style="color:var(--red)"></i>
+    <div class="stat-label">Total Building Expenses</div>
+    <div class="stat-value" style="color:#f87171">₹{{ "{:,.0f}".format(total) }}</div>
+    <div class="stat-sub">{{ expenses|length }} entries</div>
+  </div>
+  <div class="stat-card c-amber">
+    <i class="bi bi-tools stat-icon" style="color:var(--amber)"></i>
+    <div class="stat-label">Largest Expense</div>
+    <div class="stat-value" style="color:#fbbf24;font-size:1.2rem;">
+      {% if expenses %}₹{{ "{:,.0f}".format(max_exp.amount) }}{% else %}—{% endif %}
+    </div>
+    <div class="stat-sub">{% if expenses %}{{ max_exp.description }}{% else %}No entries{% endif %}</div>
+  </div>
+  <div class="stat-card c-purple">
+    <i class="bi bi-grid stat-icon" style="color:var(--purple)"></i>
+    <div class="stat-label">Categories</div>
+    <div class="stat-value" style="color:#c084fc">
+      {% set cats = [] %}
+      {% for e in expenses %}{% if e.category not in cats %}{% set _ = cats.append(e.category) %}{% endif %}{% endfor %}
+      {{ cats|length }}
+    </div>
+    <div class="stat-sub">Distinct types</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 320px;gap:1rem;margin-bottom:1.25rem;" class="fade-up d2">
+
+  <!-- Add Form -->
+  <div class="card">
+    <div class="card-header"><span><i class="bi bi-plus-circle" style="margin-right:6px;color:var(--gold);"></i>Add Building Expense</span></div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('add_building_expense') }}" enctype="multipart/form-data" id="buildingForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-grid form-grid-2" style="margin-bottom:.85rem;">
+          <div class="form-group">
+            <label>Description <span style="color:var(--red)">*</span></label>
+            <input class="form-control" name="description" id="b-desc" required placeholder="Roof Repair">
+          </div>
+          <div class="form-group">
+            <label>Amount (₹) <span style="color:var(--red)">*</span></label>
+            <input class="form-control" name="amount" id="b-amount" type="number" step="0.01" min="0.01" required placeholder="12000">
+          </div>
+          <div class="form-group">
+            <label>Category</label>
+            <select class="form-control" name="category">
+              <option value="Repairs">Repairs</option>
+              <option value="Maintenance">Maintenance</option>
+              <option value="Plumbing">Plumbing</option>
+              <option value="Electrical">Electrical</option>
+              <option value="Renovation">Renovation</option>
+              <option value="Security">Security</option>
+              <option value="Painting">Painting</option>
+              <option value="Cleaning">Cleaning</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Date <span style="color:var(--red)">*</span></label>
+            <input class="form-control" name="date" id="b-date" type="date" required>
+          </div>
+          <div class="form-group">
+            <label>Receipt Upload</label>
+            <input class="form-control" name="receipt" type="file" accept=".pdf,image/*" style="padding:.4rem .85rem;">
+          </div>
+          <div class="form-group">
+            <label>Notes</label>
+            <input class="form-control" name="notes" placeholder="Optional">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button type="submit" class="btn btn-gold" id="buildingSubmit"><i class="bi bi-plus-lg"></i> Add Expense</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('form').reset();document.getElementById('b-date').valueAsDate=new Date()">
+            <i class="bi bi-x"></i> Clear
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Category Chart -->
+  <div class="card">
+    <div class="card-header"><span><i class="bi bi-pie-chart" style="margin-right:6px;color:var(--purple);"></i>By Category</span></div>
+    <div class="card-body">
+      {% if expenses %}
+      <div class="chart-box" style="height:220px;"><canvas id="catChart"></canvas></div>
+      {% else %}
+      <div style="height:220px;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:.83rem;">
+        <div style="text-align:center;"><i class="bi bi-pie-chart" style="font-size:2rem;display:block;margin-bottom:.5rem;opacity:.4;"></i>No data yet</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Expense Log -->
+<div class="data-table-wrap fade-up d3">
+  <div class="table-controls">
+    <div class="table-title"><i class="bi bi-list-ul" style="margin-right:6px;color:var(--red);"></i>Expense Log</div>
+    <span style="font-size:.78rem;color:var(--text-faint);">{{ expenses|length }} entries · ₹{{ "{:,.0f}".format(total) }} total</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Description</th><th>Category</th>
+          <th style="text-align:right;">Amount (₹)</th>
+          <th>Receipt</th><th>Notes</th><th style="text-align:center;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in expenses %}
+        <tr>
+          <td style="color:var(--text-dim);white-space:nowrap;">{{ e.date.strftime("%d %b %Y") if e.date else "—" }}</td>
+          <td style="color:var(--text);font-weight:500;">{{ e.description }}</td>
+          <td>
+            <span style="background:var(--red-bg);color:#f87171;padding:.18rem .55rem;border-radius:20px;font-size:.72rem;border:1px solid rgba(239,68,68,.2);white-space:nowrap;">
+              {{ e.category }}
+            </span>
+          </td>
+          <td style="font-weight:600;color:#f87171;text-align:right;">₹{{ "{:,.0f}".format(e.amount) }}</td>
+          <td>
+            {% if e.receipt_path %}
+              <span style="color:#4ade80;font-size:.78rem;"><i class="bi bi-paperclip"></i> Attached</span>
+            {% else %}
+              <span style="color:var(--text-faint);font-size:.78rem;">None</span>
+            {% endif %}
+          </td>
+          <td style="color:var(--text-faint);font-size:.78rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            {{ e.notes or "—" }}
+          </td>
+          <td style="text-align:center;">
+            <form method="POST" action="{{ url_for('delete_building_expense', eid=e.id) }}"
+                  onsubmit="return confirm('Delete \'{{ e.description }}\' (₹{{ '{:,.0f}'.format(e.amount) }})?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" style="text-align:center;padding:3rem;color:var(--text-faint);">
+            <i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:.5rem;opacity:.4;"></i>
+            No building expenses yet. Add one above.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+
+      {% if expenses %}
+      <tfoot>
+        <tr style="background:var(--surface2);border-top:2px solid var(--border2);">
+          <td colspan="3" style="font-weight:600;color:var(--text);padding:.7rem 1rem;">Total</td>
+          <td style="font-weight:700;color:#f87171;text-align:right;padding:.7rem 1rem;">₹{{ "{:,.0f}".format(total) }}</td>
+          <td colspan="3"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Auto-set today's date
+document.getElementById('b-date').valueAsDate = new Date();
+
+// Prevent double submit
+document.getElementById('buildingForm').addEventListener('submit', function(e) {
+  const desc = document.getElementById('b-desc').value.trim();
+  const amt  = parseFloat(document.getElementById('b-amount').value);
+  const dt   = document.getElementById('b-date').value;
+  if (!desc || !amt || amt <= 0 || !dt) {
+    e.preventDefault();
+    alert('Please fill in Description, Amount, and Date.');
+    return;
+  }
+  const btn = document.getElementById('buildingSubmit');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...';
+});
+
+{% if expenses %}
+document.addEventListener('DOMContentLoaded', function() {
+// Build category totals using Jinja loop — avoids tojson on SQLAlchemy objects
+const catTotals = {};
+{% for e in expenses %}
+catTotals[{{ e.category | tojson }}] = (catTotals[{{ e.category | tojson }}] || 0) + {{ e.amount }};
+{% endfor %}
+const labels = Object.keys(catTotals);
+const values = Object.values(catTotals);
+const palette = ['#f87171','#fbbf24','#60a5fa','#4ade80','#c084fc','#fb923c','#34d399'];
+
+new Chart(document.getElementById('catChart').getContext('2d'), {
+  type: 'doughnut',
+  data: {
+    labels,
+    datasets: [{
+      data: values,
+      backgroundColor: palette.slice(0, labels.length).map(c => c + '99'),
+      borderColor: palette.slice(0, labels.length),
+      borderWidth: 1.5,
+      hoverOffset: 6
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: { color: '#8b93a8', font: { size: 11 }, boxWidth: 10, padding: 8 }
+      },
+      tooltip: {
+        callbacks: { label: c => ' ₹' + c.raw.toLocaleString('en-IN') },
+        backgroundColor: '#1e2535',
+        borderColor: 'rgba(255,255,255,0.1)',
+        borderWidth: 1,
+        padding: 10
+      }
+    },
+    cutout: '60%'
+  }
+});
+}); // end DOMContentLoaded
+{% endif %}
+</script>
+{% endblock %}

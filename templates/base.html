@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>{% block title %}RentManager{% endblock %}</title>
+  <!-- Favicon: building logo shown in browser tab / URL bar -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e8a020'/%3E%3Crect x='8' y='14' width='16' height='13' rx='1.5' fill='%230f1117'/%3E%3Crect x='11' y='8' width='10' height='8' rx='1.5' fill='%230f1117'/%3E%3Crect x='14' y='5' width='4' height='5' rx='1' fill='%230f1117'/%3E%3Crect x='10' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='14.5' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='19' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='10' y='22' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='19' y='22' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='13.5' y='22' width='5' height='5' rx='.5' fill='%23e8a020'/%3E%3C/svg%3E" />
+  <link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e8a020'/%3E%3Crect x='8' y='14' width='16' height='13' rx='1.5' fill='%230f1117'/%3E%3Crect x='11' y='8' width='10' height='8' rx='1.5' fill='%230f1117'/%3E%3Crect x='14' y='5' width='4' height='5' rx='1' fill='%230f1117'/%3E%3Crect x='10' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='14.5' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='19' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='10' y='22' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='19' y='22' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='13.5' y='22' width='5' height='5' rx='.5' fill='%23e8a020'/%3E%3C/svg%3E" />
+  <!-- Mobile browser toolbar / address bar color -->
+  <meta name="theme-color" content="#e8a020" />
+  <meta name="csrf-token" content="{{ csrf_token() if csrf_token else '' }}" />
+
+  <!-- ── PERFORMANCE: DNS + preconnect for ALL CDN origins used ── -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+
+  <!-- ── FONTS: non-blocking swap, system-font fallback prevents FOUT ── -->
+  <link rel="preload" as="style"
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Playfair+Display:wght@600&display=swap"
+    onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet" />
+  </noscript>
+
+  <!-- ── BOOTSTRAP ICONS: non-blocking ── -->
+  <link rel="preload" as="style"
+    href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  </noscript>
+
+  <!-- ── CHART.JS: only preload on pages that actually chart ── -->
+  {% if request.endpoint in ['dashboard','income_expenses','ca_audit','rent_tracker'] %}
+  <link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" />
+  {% endif %}
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-serif: 'Playfair Display', Georgia, serif;
+      --bg: #0f1117; --surface: #161b27; --surface2: #1e2535;
+      --border: rgba(255,255,255,0.07); --border2: rgba(255,255,255,0.12);
+      --gold: #e8a020; --gold-dim: #c4841a; --gold-glow: rgba(232,160,32,0.18);
+      --text: #e8eaf0; --text-dim: #8b93a8; --text-faint: #4a5168;
+      --green: #22c55e; --green-bg: rgba(34,197,94,0.12);
+      --amber: #f59e0b; --amber-bg: rgba(245,158,11,0.12);
+      --red: #ef4444;   --red-bg: rgba(239,68,68,0.12);
+      --blue: #3b82f6;  --blue-bg: rgba(59,130,246,0.12);
+      --purple: #a855f7;--purple-bg: rgba(168,85,247,0.12);
+      --sidebar-w: 240px; --radius: 12px; --radius-lg: 16px;
+      --topbar-h: 56px; --bottom-nav-h: 64px;
+    }
+    html { font-size: 15px; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-body);
+           font-weight: 400; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+
+    /* ── SIDEBAR (desktop) ─────────────────────────────────── */
+    .sidebar { width: var(--sidebar-w); height: 100vh; position: fixed; top: 0; left: 0;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; z-index: 200; overflow-y: auto;
+      transition: transform .3s cubic-bezier(.4,0,.2,1); }
+    .sidebar-brand { padding: 1.5rem 1.25rem 1.1rem; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 11px; flex-shrink: 0; }
+    .brand-icon { width: 36px; height: 36px; background: var(--gold); border-radius: 9px;
+      display: flex; align-items: center; justify-content: center; font-size: .95rem;
+      color: #0f1117; flex-shrink: 0; box-shadow: 0 4px 16px var(--gold-glow); }
+    .brand-text { font-family: var(--font-serif); font-size: 1.05rem; color: var(--text); }
+    .brand-sub  { font-size: .65rem; color: var(--text-faint); letter-spacing: .06em; text-transform: uppercase; }
+    .sidebar-nav { flex: 1; padding: .75rem 0; }
+    .nav-section-label { font-size: .62rem; text-transform: uppercase; letter-spacing: .1em;
+      color: var(--text-faint); padding: .65rem 1.25rem .35rem; }
+    .nav-item { display: block; position: relative; }
+    .nav-link { display: flex; align-items: center; gap: 10px; padding: .55rem 1.25rem;
+      color: var(--text-dim); text-decoration: none; font-size: .85rem;
+      transition: color .2s, background .2s; white-space: nowrap; }
+    .nav-link i { font-size: .95rem; width: 17px; flex-shrink: 0; }
+    .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+    .nav-link.active { color: var(--gold); background: var(--gold-glow); font-weight: 500; }
+    .nav-link.active::before { content:''; position:absolute; left:0; top:3px; bottom:3px;
+      width:3px; background:var(--gold); border-radius:0 3px 3px 0; }
+    .sidebar-footer { padding: .9rem 1.25rem; border-top: 1px solid var(--border); flex-shrink: 0; }
+    .admin-chip { display: flex; align-items: center; gap: 9px; padding: .55rem .7rem;
+      background: var(--surface2); border-radius: var(--radius); border: 1px solid var(--border); }
+    .admin-avatar { width: 30px; height: 30px; background: linear-gradient(135deg,var(--gold),var(--gold-dim));
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: .72rem; font-weight: 600; color: #0f1117; flex-shrink: 0; }
+    .admin-name { font-size: .8rem; font-weight: 500; color: var(--text); }
+    .admin-role { font-size: .65rem; color: var(--text-faint); }
+
+    /* ── MAIN WRAP ─────────────────────────────────────────── */
+    .main-wrap { margin-left: var(--sidebar-w); min-height: 100vh; display: flex; flex-direction: column; }
+    .topbar { position: sticky; top: 0; height: var(--topbar-h);
+      background: rgba(15,17,23,0.88); backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border); padding: 0 1.75rem;
+      display: flex; align-items: center; justify-content: space-between; z-index: 100; }
+    .topbar-title { font-size: .85rem; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+    .topbar-title .page-name { color: var(--text); font-weight: 500; }
+    .topbar-date { font-size: .76rem; color: var(--text-faint); background: var(--surface2);
+      border: 1px solid var(--border); padding: .28rem .75rem; border-radius: 20px; }
+    .page-body { flex: 1; padding: 1.75rem; }
+
+    /* ── HAMBURGER (hidden on desktop) ─────────────────────── */
+    .hamburger { display: none; background: none; border: none; color: var(--text);
+      font-size: 1.3rem; cursor: pointer; padding: .25rem; }
+    .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      z-index: 199; backdrop-filter: blur(2px); }
+
+    /* ── BOTTOM NAV (mobile only) ───────────────────────────── */
+    .bottom-nav { display: none; }
+
+    /* ── ALERTS ────────────────────────────────────────────── */
+    .alert { border-radius: var(--radius); padding: .7rem .95rem; font-size: .875rem;
+      border: 1px solid; display: flex; align-items: center; gap: 10px;
+      margin-bottom: .9rem; animation: slideIn .3s ease; }
+    @keyframes slideIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+    .alert-success { background:var(--green-bg); border-color:rgba(34,197,94,.25); color:#4ade80; }
+    .alert-danger  { background:var(--red-bg);   border-color:rgba(239,68,68,.25);  color:#f87171; }
+    .alert-warning { background:var(--amber-bg); border-color:rgba(245,158,11,.25); color:#fbbf24; }
+    .alert-info    { background:var(--blue-bg);  border-color:rgba(59,130,246,.25); color:#60a5fa; }
+    .btn-close-alert { margin-left:auto; background:none; border:none; color:inherit;
+      opacity:.6; cursor:pointer; font-size:1rem; padding:0; line-height:1; }
+
+    /* ── CARDS ─────────────────────────────────────────────── */
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); }
+    .card-header { padding:1rem 1.4rem; border-bottom:1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between;
+      font-size:.87rem; font-weight:500; color:var(--text); }
+    .card-body { padding:1.4rem; }
+
+    /* ── STAT GRID ─────────────────────────────────────────── */
+    .stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.9rem; margin-bottom:1.5rem; }
+    .stat-card { background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius-lg); padding:1.15rem 1.4rem; position:relative;
+      overflow:hidden; transition:border-color .2s,transform .2s; }
+    .stat-card:hover { border-color:var(--border2); transform:translateY(-2px); }
+    .stat-card::after { content:''; position:absolute; top:0; right:0; width:80px; height:80px;
+      border-radius:50%; opacity:.06; transform:translate(20px,-20px); }
+    .stat-card.c-gold::after{background:var(--gold)} .stat-card.c-green::after{background:var(--green)}
+    .stat-card.c-amber::after{background:var(--amber)} .stat-card.c-blue::after{background:var(--blue)}
+    .stat-card.c-purple::after{background:var(--purple)} .stat-card.c-red::after{background:var(--red)}
+    .stat-label { font-size:.7rem; text-transform:uppercase; letter-spacing:.08em;
+      color:var(--text-faint); margin-bottom:.4rem; }
+    .stat-value { font-size:1.55rem; font-weight:600; line-height:1.1; margin-bottom:.3rem; }
+    .stat-sub   { font-size:.73rem; color:var(--text-dim); }
+    .stat-icon  { position:absolute; top:1.1rem; right:1.1rem; font-size:1.05rem; opacity:.35; }
+
+    /* ── TABLES ────────────────────────────────────────────── */
+    .data-table-wrap { background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius-lg); overflow:hidden; }
+    .table-controls { padding:.9rem 1.4rem; border-bottom:1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+    .table-title { font-size:.88rem; font-weight:500; color:var(--text); }
+    table { width:100%; border-collapse:collapse; }
+    th { padding:.65rem 1rem; font-size:.72rem; text-transform:uppercase; letter-spacing:.07em;
+      color:var(--text-faint); text-align:left; background:var(--surface2);
+      border-bottom:1px solid var(--border); font-weight:500; white-space:nowrap; }
+    td { padding:.7rem 1rem; font-size:.84rem; border-bottom:1px solid rgba(255,255,255,0.04);
+      color:var(--text-dim); vertical-align:middle; }
+    tr:last-child td { border-bottom:none; }
+    tr:hover td { background:rgba(255,255,255,0.02); }
+    tr.row-overdue td { background:rgba(239,68,68,0.04); }
+    tr.row-overdue:hover td { background:rgba(239,68,68,0.07); }
+
+    /* ── BADGES ────────────────────────────────────────────── */
+    .badge { display:inline-flex; align-items:center; gap:5px; padding:.2rem .65rem;
+      border-radius:20px; font-size:.72rem; font-weight:500; }
+    .b-dot  { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+    .b-paid    { background:var(--green-bg); color:#4ade80; border:1px solid rgba(34,197,94,.2); }
+    .b-pending { background:var(--amber-bg); color:#fbbf24; border:1px solid rgba(245,158,11,.2); }
+    .b-overdue { background:var(--red-bg);   color:#f87171; border:1px solid rgba(239,68,68,.2); }
+
+    /* ── BUTTONS ───────────────────────────────────────────── */
+    .btn { display:inline-flex; align-items:center; gap:7px; padding:.5rem 1rem;
+      border-radius:8px; font-size:.83rem; font-weight:500; cursor:pointer;
+      border:1px solid transparent; text-decoration:none; transition:all .2s; line-height:1; }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    .btn-gold  { background:var(--gold); color:#0f1117; border-color:var(--gold); }
+    .btn-gold:hover { background:#f0aa22; }
+    .btn-ghost { background:transparent; color:var(--text-dim); border-color:var(--border2); }
+    .btn-ghost:hover { border-color:var(--gold); color:var(--gold); }
+    .btn-success{ background:var(--green-bg); color:#4ade80; border-color:rgba(34,197,94,.25); }
+    .btn-success:hover{ background:rgba(34,197,94,.2); }
+    .btn-danger { background:var(--red-bg);   color:#f87171; border-color:rgba(239,68,68,.25); }
+    .btn-danger:hover { background:rgba(239,68,68,.2); }
+    .btn-info   { background:var(--blue-bg);  color:#60a5fa; border-color:rgba(59,130,246,.25); }
+    .btn-sm { padding:.35rem .7rem; font-size:.78rem; }
+
+    /* ── FORMS ─────────────────────────────────────────────── */
+    .form-grid   { display:grid; gap:1rem; }
+    .form-grid-2 { grid-template-columns:1fr 1fr; }
+    .form-grid-3 { grid-template-columns:1fr 1fr 1fr; }
+    .form-group  { display:flex; flex-direction:column; gap:.4rem; }
+    .form-group label { font-size:.78rem; color:var(--text-dim); font-weight:500; }
+    .form-control { background:var(--surface2); border:1px solid var(--border2);
+      border-radius:8px; padding:.55rem .85rem; color:var(--text); font-size:.85rem;
+      font-family:inherit; width:100%; transition:border-color .2s; }
+    .form-control:focus { outline:none; border-color:var(--gold); }
+    .form-control option { background:var(--surface2); }
+    select.form-control { appearance:none;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b93a8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat:no-repeat; background-position:right .85rem center; padding-right:2.5rem; }
+    textarea.form-control { resize:vertical; min-height:80px; }
+    .chart-box { position:relative; }
+    .tabs { display:flex; gap:2px; background:var(--surface2); border-radius:10px; padding:3px; }
+    .tab-btn { flex:1; padding:.45rem .9rem; border-radius:8px; font-size:.82rem; font-weight:500;
+      border:none; background:none; color:var(--text-dim); cursor:pointer; transition:all .2s; }
+    .tab-btn.active { background:var(--surface); color:var(--gold); box-shadow:0 1px 4px rgba(0,0,0,.3); }
+    .tab-panel { display:none; } .tab-panel.active { display:block; }
+    .fade-up { opacity:0; transform:translateY(12px); animation:fadeUp .4s ease forwards; }
+    .d1{animation-delay:.05s}.d2{animation-delay:.1s}.d3{animation-delay:.15s}
+    .d4{animation-delay:.2s}.d5{animation-delay:.25s}.d6{animation-delay:.3s}
+    @keyframes fadeUp { to{opacity:1;transform:translateY(0)} }
+    .renter-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:1rem; }
+    .renter-card { background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius-lg); padding:1.4rem; transition:border-color .2s,transform .2s; }
+    .renter-card:hover { border-color:var(--border2); transform:translateY(-2px); }
+    .renter-avatar { width:52px; height:52px; border-radius:50%; display:flex;
+      align-items:center; justify-content:center; font-size:1.3rem; font-weight:600;
+      flex-shrink:0; margin-bottom:1rem; }
+    ::-webkit-scrollbar { width:6px; height:6px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px; }
+
+    /* ════════════════════════════════════════════════════════
+       MOBILE RESPONSIVE  ≤ 768px
+    ════════════════════════════════════════════════════════ */
+    /* ══════════════════════════════════════════════════
+       MOBILE  ≤ 768px
+    ══════════════════════════════════════════════════ */
+    @media (max-width: 768px) {
+      html { font-size: 14px; }
+
+      /* CRITICAL: hide sidebar off-screen by default */
+      .sidebar {
+        transform: translateX(-100%) !important;
+        transition: transform .3s cubic-bezier(.4,0,.2,1);
+      }
+      .sidebar.open {
+        transform: translateX(0) !important;
+        box-shadow: 8px 0 32px rgba(0,0,0,.7);
+      }
+      .sidebar-overlay.open { display: block; }
+
+      /* Main wrap: full width, no left margin */
+      .main-wrap {
+        margin-left: 0 !important;
+        padding-bottom: var(--bottom-nav-h);
+        width: 100%;
+      }
+
+      /* Topbar */
+      .topbar { padding: 0 .85rem; height: 52px; }
+      .hamburger { display: flex; align-items: center; }
+      .topbar-date { display: none; }
+      .topbar-title { font-size: .8rem; }
+
+      /* Page body */
+      .page-body { padding: .85rem; }
+
+      /* Stat grid: 2 columns */
+      .stat-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: .6rem;
+        margin-bottom: 1rem;
+      }
+      .stat-value { font-size: 1.15rem; }
+      .stat-card { padding: .9rem 1rem; }
+      .stat-icon { font-size: .9rem; top: .9rem; right: .9rem; }
+
+      /* All inline style grids → single column */
+      div[style*="grid-template-columns"],
+      section[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+        gap: .75rem !important;
+      }
+
+      /* Form grids */
+      .form-grid-2,
+      .form-grid-3 { grid-template-columns: 1fr !important; }
+
+      /* Tables scroll */
+      .data-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radius); }
+      .data-table-wrap table { min-width: 520px; }
+      th, td { padding: .5rem .65rem; font-size: .76rem; }
+
+      /* Remove hover effects on touch */
+      .card:hover, .stat-card:hover, .renter-card:hover { transform: none !important; }
+      tr:hover td { background: inherit; color: inherit; }
+
+      /* Renter grid */
+      .renter-grid { grid-template-columns: 1fr !important; }
+
+      /* Cards */
+      .card { border-radius: var(--radius); }
+      .card-header { padding: .85rem 1rem; }
+      .card-body { padding: 1rem; }
+
+      /* Tabs scroll */
+      .tabs { overflow-x: auto; gap: 1px; }
+      .tab-btn { white-space: nowrap; font-size: .72rem; padding: .38rem .65rem; flex: none; }
+
+      /* Charts */
+      .chart-box { height: 160px !important; }
+
+      /* Buttons */
+      .btn { font-size: .8rem; padding: .45rem .85rem; }
+      .btn-sm { font-size: .74rem; padding: .32rem .65rem; }
+
+      /* Drawer full screen */
+      .drawer { width: 100vw !important; right: -100vw !important; }
+      .drawer.open { right: 0 !important; }
+
+      /* All grid containers collapse to single column */
+      .mob-stack,
+      div[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+        gap: .75rem !important;
+      }
+
+      /* Bottom nav */
+      .bottom-nav {
+        display: flex;
+        position: fixed; bottom: 0; left: 0; right: 0;
+        height: var(--bottom-nav-h);
+        background: var(--surface);
+        border-top: 1px solid var(--border2);
+        z-index: 150;
+        align-items: stretch;
+        padding-bottom: env(safe-area-inset-bottom, 0);
+      }
+      .bottom-nav a {
+        flex: 1; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 2px; color: var(--text-faint);
+        text-decoration: none; font-size: .56rem; font-weight: 500;
+        letter-spacing: .02em; text-transform: uppercase;
+        transition: color .15s; padding: .3rem .1rem;
+        border-top: 2px solid transparent;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .bottom-nav a i { font-size: 1.15rem; }
+      .bottom-nav a.active { color: var(--gold); border-top-color: var(--gold); }
+      .bottom-nav a:active { background: rgba(255,255,255,.06); }
+
+      /* Alert */
+      .alert { font-size: .82rem; padding: .6rem .85rem; }
+
+      /* Hide scrollbar on mobile */
+      ::-webkit-scrollbar { width: 0; height: 0; }
+    }
+
+    @media (max-width: 480px) {
+      html { font-size: 13px; }
+      .stat-grid { grid-template-columns: 1fr 1fr !important; gap: .5rem; }
+      .stat-value { font-size: 1rem; }
+      .stat-card { padding: .8rem .85rem; }
+      .page-body { padding: .65rem; }
+      .topbar { padding: 0 .65rem; }
+      .table-controls { padding: .7rem .85rem; flex-direction: column; align-items: flex-start; gap: .5rem; }
+    }
+
+    {% block extra_styles %}{% endblock %}
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+{# ── LOGIN: no sidebar ── #}
+{% if request.endpoint == 'login' %}
+  {% block auth_content %}{% endblock %}
+
+{# ── ALL OTHER PAGES ── #}
+{% else %}
+
+<!-- Mobile sidebar overlay -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon"><i class="bi bi-building"></i></div>
+    <div>
+      <div class="brand-text">RentManager</div>
+      <div class="brand-sub">Property Admin</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">Overview</div>
+    <div class="nav-item">
+      <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint=='dashboard' %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-grid-1x2"></i> Dashboard
+      </a>
+    </div>
+    <div class="nav-section-label">Rent</div>
+    <div class="nav-item">
+      <a href="{{ url_for('rent_tracker') }}" class="nav-link {% if request.endpoint=='rent_tracker' %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-currency-rupee"></i> Rent Tracker
+      </a>
+    </div>
+    <div class="nav-item">
+      <a href="{{ url_for('rent_history') }}" class="nav-link {% if request.endpoint in ['rent_history','add_rent_record','edit_rent_record'] %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-calendar-month"></i> Rent History
+      </a>
+    </div>
+    <div class="nav-item">
+      <a href="{{ url_for('renters') }}" class="nav-link {% if request.endpoint in ['renters','add_renter','edit_renter','renter_detail'] %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-people"></i> Renters
+      </a>
+    </div>
+    <div class="nav-section-label">Expenses</div>
+    <div class="nav-item">
+      <a href="{{ url_for('common_expenses') }}" class="nav-link {% if request.endpoint=='common_expenses' %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-share"></i> Common Expenses
+      </a>
+    </div>
+    <div class="nav-item">
+      <a href="{{ url_for('building_expenses') }}" class="nav-link {% if request.endpoint=='building_expenses' %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-house-gear"></i> Building Expenses
+      </a>
+    </div>
+    <div class="nav-section-label">Analytics</div>
+    <div class="nav-item">
+      <a href="{{ url_for('income_expenses') }}" class="nav-link {% if request.endpoint=='income_expenses' %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-bar-chart-line"></i> Income & Expenses
+      </a>
+    </div>
+    <div class="nav-item">
+      <a href="{{ url_for('ca_audit') }}" class="nav-link {% if request.endpoint=='ca_audit' %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-shield-check"></i> CA Audit
+      </a>
+    </div>
+    <div class="nav-section-label">Communication</div>
+    <div class="nav-item">
+      <a href="{{ url_for('reminders') }}" class="nav-link {% if request.endpoint=='reminders' %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-bell"></i> Reminders
+      </a>
+    </div>
+    <div class="nav-item">
+      <a href="{{ url_for('change_password') }}" class="nav-link {% if request.endpoint=='change_password' %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-key"></i> Change Password
+      </a>
+    </div>
+    <div class="nav-item">
+      <a href="{{ url_for('download_excel') }}" class="nav-link" onclick="closeSidebar()">
+        <i class="bi bi-file-earmark-excel"></i> Download Excel
+      </a>
+    </div>
+    <div class="nav-item">
+      <a href="{{ url_for('upload_excel') }}" class="nav-link {% if request.endpoint=='upload_excel' %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-file-earmark-arrow-up"></i> Upload Excel
+      </a>
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="admin-chip">
+      <div class="admin-avatar">{{ session.get('admin_username','A')[0].upper() }}</div>
+      <div>
+        <div class="admin-name">{{ session.get('admin_username','Admin') }}</div>
+        <div class="admin-role">Super Admin</div>
+      </div>
+      <a href="{{ url_for('logout') }}" style="margin-left:auto;color:var(--text-faint);font-size:.9rem;" title="Logout">
+        <i class="bi bi-box-arrow-right"></i>
+      </a>
+    </div>
+  </div>
+</aside>
+
+<div class="main-wrap">
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+        <i class="bi bi-list"></i>
+      </button>
+      <div class="topbar-title">
+        <span style="color:var(--text-faint);">RentManager</span>
+        <span style="color:var(--text-faint);margin:0 4px;">/</span>
+        <span class="page-name">{% block page_title %}{% endblock %}</span>
+      </div>
+    </div>
+    <div class="topbar-date" id="live-date"></div>
+  </div>
+
+  <div class="page-body">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ cat }}">
+            <i class="bi {% if cat=='success' %}bi-check-circle{% elif cat=='danger' %}bi-exclamation-circle{% elif cat=='warning' %}bi-exclamation-triangle{% else %}bi-info-circle{% endif %}"></i>
+            {{ msg }}
+            <button class="btn-close-alert" onclick="this.parentElement.remove()">×</button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+<!-- Bottom navigation (mobile only) -->
+<nav class="bottom-nav">
+  <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint=='dashboard' %}active{% endif %}">
+    <i class="bi bi-grid-1x2"></i>Home
+  </a>
+  <a href="{{ url_for('rent_tracker') }}" class="{% if request.endpoint=='rent_tracker' %}active{% endif %}">
+    <i class="bi bi-currency-rupee"></i>Tracker
+  </a>
+  <a href="{{ url_for('renters') }}" class="{% if request.endpoint in ['renters','add_renter','edit_renter'] %}active{% endif %}">
+    <i class="bi bi-people"></i>Renters
+  </a>
+  <a href="{{ url_for('reminders') }}" class="{% if request.endpoint=='reminders' %}active{% endif %}">
+    <i class="bi bi-bell"></i>Remind
+  </a>
+  <a href="#" onclick="toggleSidebar();return false;">
+    <i class="bi bi-grid"></i>More
+  </a>
+</nav>
+
+<script>
+function updateDate(){
+  const d = new Date();
+  document.getElementById('live-date').textContent =
+    d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+}
+updateDate(); setInterval(updateDate, 60000);
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarOverlay').classList.toggle('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('open');
+}
+// Close sidebar on Escape
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeSidebar(); });
+</script>
+{% endif %}
+
+<!-- Chart.js: loaded only on pages that use charts -->
+{% if request.endpoint in ['dashboard','income_expenses','ca_audit','rent_tracker'] %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+{% endif %}
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>
