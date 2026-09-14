@@ -156,6 +156,7 @@
           <td style="color:var(--text-dim);">{{ t.get_due_day() }}th</td>
           <td>
             {% if t.status=='Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
+            {% elif t.status=='Partial' %}<span class="badge" style="background:rgba(168,85,247,.12);color:#c084fc;border:1px solid rgba(168,85,247,.25);"><span class="b-dot" style="background:#c084fc"></span>Partial</span>
             {% elif rec and rec.is_new_join_month() %}<span class="badge" style="background:var(--blue-bg);color:#60a5fa;border:1px solid rgba(59,130,246,.2);"><span class="b-dot" style="background:#60a5fa"></span>New Join</span>
             {% elif rec and rec.is_overdue(today) %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Overdue</span>
             {% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}

@@ -89,12 +89,13 @@
           </td>
           <td>
             {% if r.status == 'Paid' %}<span class="month-pill status-paid">✓ Paid</span>
+            {% elif r.status == 'Partial' %}<span class="month-pill" style="background:rgba(168,85,247,.12);color:#c084fc;border-color:rgba(168,85,247,.25);">◐ Partial — ₹{{ "{:,.0f}".format(r.balance_due()) }} due</span>
             {% elif r.is_new_join_month() %}<span class="month-pill" style="background:rgba(59,130,246,.12);color:#60a5fa;border-color:rgba(59,130,246,.25);">🆕 New Join</span>
             {% else %}<span class="month-pill status-pending">⏳ Pending</span>{% endif %}
           </td>
           <td style="color:var(--text-faint);font-size:.8rem;">{{ r.payment_date.strftime("%d %b %Y") if r.payment_date else "—" }}</td>
           <td style="font-size:.8rem;color:var(--text-dim);">
-            {% if r.status != 'Paid' %}—
+            {% if r.status == 'Pending' %}—
             {% elif r.payment_method == 'cash' %}<i class="bi bi-cash-stack" style="color:#4ade80;"></i> Cash
             {% elif r.payment_method in ['upi_screenshot','upi'] %}<i class="bi bi-phone" style="color:#60a5fa;"></i> UPI
             {% elif r.payment_method == 'manual' %}<i class="bi bi-pencil" style="color:#a855f7;"></i> Manual
@@ -102,7 +103,7 @@
             {% else %}—{% endif %}
           </td>
           <td style="font-family:monospace;font-size:.7rem;color:var(--text-faint);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.transaction_id or '' }}">
-            {% if r.status == 'Paid' %}{{ r.transaction_id or '—' }}{% else %}—{% endif %}
+            {% if r.status != 'Pending' %}{{ r.transaction_id or '—' }}{% else %}—{% endif %}
           </td>
           <td style="text-align:center;">
             <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;">

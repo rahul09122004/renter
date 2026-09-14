@@ -166,7 +166,10 @@ def save_upload(field):
                 file_bytes = f.read()
                 content_type = f.content_type or "application/octet-stream"
                 storage.from_(bucket).upload(fn, file_bytes, {"content-type": content_type})
-                return f"{supabase_url}/storage/v1/object/public/{bucket}/{fn}"
+                # Store just the object key — the bucket is private, so a permanent
+                # public URL wouldn't work anyway. get_file_url() below generates a
+                # short-lived signed URL on demand whenever the file needs to be shown.
+                return fn
             except Exception as e:
                 logger.error(f"Supabase upload failed: {e}")
                 f.seek(0)
@@ -176,6 +179,50 @@ def save_upload(field):
             f.save(os.path.join(UPLOAD_FOLDER, fn))
             return fn
     return None
+
+_signed_url_cache = {}  # {filename: (url, expires_at_timestamp)} — avoids re-signing on every render
+
+def get_file_url(filename):
+    """Resolve a stored filename to something a browser can actually load:
+    - legacy full http(s) URLs (old public-bucket uploads) are returned as-is
+    - files that exist on local disk are served via /static/uploads/
+    - anything else is assumed to be a Supabase object key and gets a
+      short-lived signed URL (cached for a few minutes to cut down on API calls)
+    Use this everywhere a stored photo/agreement/screenshot/receipt path is displayed."""
+    if not filename:
+        return None
+    if filename.startswith("http://") or filename.startswith("https://"):
+        return filename
+    local_path = os.path.join(UPLOAD_FOLDER, filename)
+    if os.path.exists(local_path):
+        return url_for("static", filename=f"uploads/{filename}")
+
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY")
+    bucket       = os.environ.get("SUPABASE_BUCKET", "uploads")
+    if not (supabase_url and supabase_key):
+        return None
+
+    import time
+    cached = _signed_url_cache.get(filename)
+    if cached and cached[1] > time.time():
+        return cached[0]
+    try:
+        from storage3 import create_client
+        headers = {"apiKey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+        storage = create_client(f"{supabase_url}/storage/v1", headers, is_async=False)
+        expiry_seconds = 3600
+        result = storage.from_(bucket).create_signed_url(filename, expiry_seconds)
+        # storage3 returns {"signedURL": "...", "signedUrl": "..."} with an already-absolute URL
+        url = (result or {}).get("signedURL") or (result or {}).get("signedUrl")
+        if url:
+            _signed_url_cache[filename] = (url, time.time() + expiry_seconds - 120)  # refresh a bit early
+        return url
+    except Exception as e:
+        logger.error(f"[Supabase] Signed URL failed for {filename}: {e}")
+        return None
+
+app.jinja_env.globals["file_url"] = get_file_url
 
 def send_sms(phone, message):
     api_key = os.environ.get("FAST2SMS_KEY", "").strip()
@@ -217,6 +264,39 @@ def _get_or_create_record(tenant_id, month, year):
         t.payment_screenshot = None
         db.session.commit()
     return rec
+
+
+def _sync_carry_forward(record):
+    """Whenever a record's paid amount/status changes, push any shortfall
+    (rent owed minus what was actually paid) onto NEXT month's rent_amount
+    for the same tenant. Idempotent: always reverses whatever this record
+    previously carried out before applying the new amount, so re-editing a
+    record (e.g. correcting a partial payment) never double-counts.
+    A record only carries a balance when its status is 'Partial' or
+    'Pending' (unpaid); 'Paid' records carry nothing."""
+    if not record.tenant_id:
+        return
+    balance = record.balance_due() if record.status in ("Partial", "Pending") else 0.0
+    prev_carry = record.carried_out_amount or 0.0
+    if abs(balance - prev_carry) < 0.005:
+        return  # nothing changed, skip an extra write
+
+    nxt_month, nxt_year = record.month + 1, record.year
+    if nxt_month > 12:
+        nxt_month = 1
+        nxt_year += 1
+    nxt = _get_or_create_record(record.tenant_id, nxt_month, nxt_year)
+    if nxt:
+        nxt.rent_amount = round(max(0.0, (nxt.rent_amount or 0.0) - prev_carry + balance), 2)
+        nxt.carried_forward = balance > 0
+        base_note = (nxt.notes or "").split(" | Carry-forward:")[0].rstrip()
+        if balance > 0:
+            tag = f" | Carry-forward: includes ₹{balance:,.0f} carried over from {record.month_label()} (unpaid balance)."
+            nxt.notes = base_note + tag
+        else:
+            nxt.notes = base_note
+        record.carried_out_amount = balance
+        db.session.commit()
 
 
 def _safe_month_year(args, today):
@@ -301,8 +381,9 @@ def dashboard():
                    )
                    .all())
 
-    collected   = sum(r.paid_amount or r.rent_amount for r in cur_records if r.status == "Paid")
-    pending_amt = sum(r.rent_amount for r in cur_records if r.status != "Paid")
+    collected   = sum((r.paid_amount or r.rent_amount) if r.status == "Paid" else (r.paid_amount or 0.0)
+                       for r in cur_records if r.status in ("Paid", "Partial"))
+    pending_amt = sum(r.balance_due() for r in cur_records if r.status != "Paid")
     overdue     = [r.tenant for r in cur_records if r.is_overdue(today)]
     new_joins   = [r.tenant for r in cur_records
                    if r.status != "Paid" and r.tenant and r.is_new_join_month()]
@@ -326,26 +407,29 @@ def dashboard():
         BuildingExpense.date < month_end,
     ).scalar() or 0.0
 
-    # ── Chart: 6 months paid records — targeted columns only ──
-    chart_months = []
-    monthly = {}
+    # ── Chart: 6 months paid/partial records — targeted columns only ──
+    chart_keys, chart_labels = [], []
     for i in range(5, -1, -1):
         m = today.month - i; y = today.year
         while m <= 0: m += 12; y -= 1
-        label = datetime(y, m, 1).strftime("%b")
-        monthly[label] = 0
-        chart_months.append((m, y))
-    chart_start = date(chart_months[0][1], chart_months[0][0], 1)
+        chart_keys.append(f"{y}-{m:02d}")
+        chart_labels.append(datetime(y, m, 1).strftime("%b"))
+    chart_start = date(int(chart_keys[0][:4]), int(chart_keys[0][5:7]), 1)
+    chart_end   = month_end  # end of the current month — prevents future/stray dates leaking in
 
+    monthly_by_key = {k: 0.0 for k in chart_keys}
     for r in (RentRecord.query
-              .filter(RentRecord.status == "Paid",
-                      RentRecord.payment_date >= chart_start)
-              .with_entities(RentRecord.payment_date, RentRecord.paid_amount, RentRecord.rent_amount)
+              .filter(RentRecord.paid_amount.isnot(None),
+                      RentRecord.payment_date >= chart_start,
+                      RentRecord.payment_date < chart_end)
+              .with_entities(RentRecord.payment_date, RentRecord.paid_amount)
               .all()):
         if r.payment_date:
-            k = r.payment_date.strftime("%b")
-            if k in monthly:
-                monthly[k] += (r.paid_amount or r.rent_amount)
+            k = r.payment_date.strftime("%Y-%m")
+            if k in monthly_by_key:
+                monthly_by_key[k] += (r.paid_amount or 0.0)
+    # Preserve chronological label order for the chart
+    monthly = {label: monthly_by_key[key] for label, key in zip(chart_labels, chart_keys)}
 
     # ── Pie chart: aggregate expenses in DB (not Python loop) ──
     common_cats = {
@@ -396,6 +480,17 @@ def dashboard():
 def rent_tracker():
     today = date.today()
 
+    # Tenants visible on the tracker: currently Active, OR vacated THIS month
+    # (so a renter who paid then vacated mid-month still shows, and their
+    # collected amount still counts toward this month's totals).
+    vacated_this_month = db.and_(
+        Tenant.occupancy_status == "Vacated",
+        Tenant.vacated_date.isnot(None),
+        db.extract("month", Tenant.vacated_date) == today.month,
+        db.extract("year", Tenant.vacated_date) == today.year,
+    )
+    tenant_visibility = db.or_(Tenant.occupancy_status == "Active", vacated_this_month)
+
     # Check if any records exist for this month — single query
     existing_ids = {r.tenant_id for r in
         RentRecord.query
@@ -403,7 +498,7 @@ def rent_tracker():
         .with_entities(RentRecord.tenant_id).all()}
 
     # Only create missing records (batch insert instead of N individual queries)
-    active_tenants = Tenant.query.filter_by(occupancy_status="Active").all()
+    active_tenants = Tenant.query.filter(tenant_visibility).all()
     new_records = []
     for t in active_tenants:
         if t.id not in existing_ids:
@@ -421,7 +516,7 @@ def rent_tracker():
                .options(joinedload(RentRecord.tenant))
                .filter_by(month=today.month, year=today.year)
                .join(Tenant, RentRecord.tenant_id == Tenant.id)
-               .filter(Tenant.occupancy_status == "Active")
+               .filter(tenant_visibility)
                .order_by(Tenant.unit)
                .all())
 
@@ -430,7 +525,7 @@ def rent_tracker():
     for r in records:
         if r.tenant and r.tenant.status != r.status:
             r.tenant.status = r.status
-            if r.status == "Paid":
+            if r.status in ("Paid", "Partial"):
                 r.tenant.payment_date   = r.payment_date
                 r.tenant.payment_method = r.payment_method
                 r.tenant.transaction_id = r.transaction_id
@@ -444,8 +539,18 @@ def rent_tracker():
 
     tenants = [r.tenant for r in records if r.tenant]
     record_by_tenant = {r.tenant_id: r for r in records}
+
+    total_rent  = sum(r.rent_amount for r in records)
+    collected   = sum((r.paid_amount or r.rent_amount) if r.status == "Paid" else (r.paid_amount or 0.0)
+                       for r in records if r.status in ("Paid", "Partial"))
+    paid_count    = sum(1 for r in records if r.status == "Paid")
+    partial_count = sum(1 for r in records if r.status == "Partial")
+    pending_count = sum(1 for r in records if r.status not in ("Paid", "Partial"))
+
     return render_template("rent_tracker.html", tenants=tenants, records=records,
-                            record_by_tenant=record_by_tenant, today=today)
+                            record_by_tenant=record_by_tenant, today=today,
+                            total_rent=total_rent, collected=collected,
+                            paid_count=paid_count, partial_count=partial_count, pending_count=pending_count)
 
 # ── MONTHLY HISTORY ───────────────────────────────────────────────────────────
 @app.route("/rent-history")
@@ -484,11 +589,14 @@ def rent_history():
             # Skip if renter hadn't joined yet
             if t.join_date and date(t.join_date.year, t.join_date.month, 1) > sel_month_start:
                 continue
-            records.append(RentRecord(
+            rec = RentRecord(
                 tenant_id=t.id, tenant_name=t.name,
                 month=sel_month, year=sel_year,
                 rent_amount=t.amount, status="Pending"
-            ))
+            )
+            rec.tenant = t  # set directly — this object is transient (not in session),
+                             # so the lazy-loaded relationship wouldn't resolve on its own
+            records.append(rec)
 
     total_expected = sum(r.rent_amount for r in records)
     total_collected = sum(r.paid_amount or 0 for r in records if r.status == "Paid")
@@ -524,8 +632,12 @@ def add_rent_record():
 
         rec.status      = status
         rec.rent_amount = float(request.form.get("rent_amount") or t.amount)
-        if status == "Paid":
-            rec.paid_amount      = float(request.form.get("paid_amount") or rec.rent_amount)
+        if status in ("Paid", "Partial"):
+            entered = float(request.form.get("paid_amount") or (rec.rent_amount if status == "Paid" else 0))
+            rec.paid_amount      = entered
+            # A partial entry that actually covers the full rent is just Paid.
+            if status == "Partial" and entered >= rec.rent_amount:
+                rec.status = "Paid"
             rec.payment_method   = request.form.get("payment_method", "cash")
             rec.transaction_id   = request.form.get("transaction_id", "")
             rec.notes            = request.form.get("notes", "")
@@ -537,6 +649,7 @@ def add_rent_record():
             rec.payment_method = None
             rec.transaction_id = None
         db.session.commit()
+        _sync_carry_forward(rec)
         flash(f"✅ Record saved for {t.name} — {date(year, month, 1).strftime('%B %Y')}.", "success")
         return redirect(url_for("rent_history", year=year, month=month))
 
@@ -558,8 +671,11 @@ def edit_rent_record(record_id):
         rec.status      = status
         rec.rent_amount = float(request.form.get("rent_amount") or rec.rent_amount)
         rec.notes       = request.form.get("notes", "")
-        if status == "Paid":
-            rec.paid_amount    = float(request.form.get("paid_amount") or rec.rent_amount)
+        if status in ("Paid", "Partial"):
+            entered = float(request.form.get("paid_amount") or (rec.rent_amount if status == "Paid" else 0))
+            rec.paid_amount    = entered
+            if status == "Partial" and entered >= rec.rent_amount:
+                rec.status = "Paid"
             rec.payment_method = request.form.get("payment_method", "cash")
             rec.transaction_id = request.form.get("transaction_id", "")
             pd = request.form.get("payment_date")
@@ -570,6 +686,7 @@ def edit_rent_record(record_id):
             rec.payment_method = None
             rec.transaction_id = None
         db.session.commit()
+        _sync_carry_forward(rec)
         flash(f"✅ Record updated.", "success")
         return redirect(url_for("rent_history", year=rec.year, month=rec.month))
     return render_template("add_rent_record.html",
@@ -593,6 +710,7 @@ def history_mark_paid(record_id):
         rec.tenant.payment_method = rec.payment_method
         rec.tenant.transaction_id = rec.transaction_id
     db.session.commit()
+    _sync_carry_forward(rec)
     flash(f"✅ {rec.tenant_name} marked Paid for {rec.month_label()}.", "success")
     return redirect(url_for("rent_history", year=rec.year, month=rec.month))
 
@@ -607,6 +725,7 @@ def history_mark_unpaid(record_id):
         rec.tenant.status = "Pending"; rec.tenant.payment_date = None
         rec.tenant.payment_method = None; rec.tenant.transaction_id = None
     db.session.commit()
+    _sync_carry_forward(rec)
     flash(f"{rec.tenant_name} marked Unpaid for {rec.month_label()}.", "info")
     return redirect(url_for("rent_history", year=rec.year, month=rec.month))
 
@@ -615,6 +734,10 @@ def history_mark_unpaid(record_id):
 def delete_rent_record(record_id):
     rec = RentRecord.query.get_or_404(record_id)
     y, m = rec.year, rec.month
+    # Reverse any balance this record had pushed onto next month before removing it.
+    rec.status = "Paid"
+    db.session.commit()
+    _sync_carry_forward(rec)
     db.session.delete(rec)
     db.session.commit()
     flash("Record deleted.", "info")
@@ -639,7 +762,9 @@ def verify_payment(tid):
 
     def _commit_payment(paid_amount, txn_id, pay_method, screenshot_fn=None):
         today = date.today()
-        t.status         = "Paid"
+        is_partial = paid_amount < t.amount - 0.005
+        new_status = "Partial" if is_partial else "Paid"
+        t.status         = new_status
         t.payment_date   = today
         t.payment_method = pay_method
         t.transaction_id = txn_id or pay_method.title()
@@ -649,18 +774,23 @@ def verify_payment(tid):
         # Write to monthly history
         rec = _get_or_create_record(t.id, today.month, today.year)
         if rec:
-            rec.status = "Paid"; rec.paid_amount = paid_amount
+            rec.status = new_status; rec.paid_amount = paid_amount
             rec.payment_date = today; rec.payment_method = pay_method
             rec.transaction_id = txn_id or ""; rec.payment_screenshot = screenshot_fn or ""
             db.session.commit()
+            _sync_carry_forward(rec)
+        return is_partial
 
     if method == "manual":
         try:
             paid_amount = float(manual_amt.replace(",", "")) if manual_amt else t.amount
         except ValueError:
             paid_amount = t.amount
-        _commit_payment(paid_amount, manual_txn, "manual")
-        flash(f"✅ {t.name} marked as Paid.", "success")
+        was_partial = _commit_payment(paid_amount, manual_txn, "manual")
+        if was_partial:
+            flash(f"⚠️ {t.name} paid ₹{paid_amount:,.0f} of ₹{t.amount:,.0f} — remaining balance carried to next month.", "warning")
+        else:
+            flash(f"✅ {t.name} marked as Paid.", "success")
         return redirect(url_for("rent_tracker"))
 
     if method == "screenshot":
@@ -694,7 +824,7 @@ def verify_payment(tid):
                     headers = {"apiKey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
                     storage = create_client(f"{supabase_url}/storage/v1", headers, is_async=False)
                     storage.from_(bucket).upload(fn, file_bytes, {"content-type": f.content_type or "image/jpeg"})
-                    stored_fn = f"{supabase_url}/storage/v1/object/public/{bucket}/{fn}"
+                    stored_fn = fn  # bucket is private — store the key, resolve via signed URL on display
                 except Exception as e:
                     logger.error(f"Supabase screenshot upload failed: {e}")
             saved_fns.append(stored_fn)
@@ -718,26 +848,33 @@ def verify_payment(tid):
 def force_mark_paid(tid):
     t = Tenant.query.get_or_404(tid)
     today = date.today()
-    t.status             = "Paid"
-    t.payment_date       = today
-    t.payment_method     = request.form.get("method", "upi_screenshot")
-    t.transaction_id     = request.form.get("transaction_id", "—")
-    t.payment_screenshot = request.form.get("screenshot_fn", "") or t.payment_screenshot
     manual_amt = request.form.get("manual_amount", "").strip()
     try:
         paid_amount = float(manual_amt.replace(",", "")) if manual_amt else t.amount
     except Exception:
         paid_amount = t.amount
+    is_partial = paid_amount < t.amount - 0.005
+    new_status = "Partial" if is_partial else "Paid"
+
+    t.status             = new_status
+    t.payment_date       = today
+    t.payment_method     = request.form.get("method", "upi_screenshot")
+    t.transaction_id     = request.form.get("transaction_id", "—")
+    t.payment_screenshot = request.form.get("screenshot_fn", "") or t.payment_screenshot
     db.session.commit()
     # Write to monthly history
     rec = _get_or_create_record(t.id, today.month, today.year)
     if rec:
-        rec.status = "Paid"; rec.paid_amount = paid_amount
+        rec.status = new_status; rec.paid_amount = paid_amount
         rec.payment_date = today; rec.payment_method = t.payment_method
         rec.transaction_id = t.transaction_id
         rec.payment_screenshot = t.payment_screenshot or ""
         db.session.commit()
-    flash(f"✅ {t.name} confirmed as Paid.", "success")
+        _sync_carry_forward(rec)
+    if is_partial:
+        flash(f"⚠️ {t.name} paid ₹{paid_amount:,.0f} of ₹{t.amount:,.0f} — remaining balance carried to next month.", "warning")
+    else:
+        flash(f"✅ {t.name} confirmed as Paid.", "success")
     return redirect(url_for("rent_tracker"))
 
 @app.route("/tenant/mark-unpaid/<int:tid>", methods=["POST"])
@@ -753,6 +890,7 @@ def mark_unpaid(tid):
     if rec:
         rec.status = "Pending"; rec.paid_amount = None; rec.payment_date = None
         db.session.commit()
+        _sync_carry_forward(rec)
     flash(f"{t.name} marked as Unpaid.", "info")
     return redirect(request.referrer or url_for("rent_tracker"))
 
@@ -1087,7 +1225,7 @@ def add_common_expense():
         db.session.add(CommonExpense(
             description=request.form["description"].strip(), amount=float(request.form["amount"]),
             category=request.form.get("category","Other"),
-            split_units=int(request.form.get("split_units",6)),
+            split_units=int(request.form.get("split_units",5)),
             date=datetime.strptime(request.form["date"],"%Y-%m-%d").date(),
             notes=request.form.get("notes",""),
         ))
@@ -1388,15 +1526,24 @@ def api_dashboard():
     cur_records = RentRecord.query.filter_by(month=today.month, year=today.year).all()
     paid_recs    = [r for r in cur_records if r.status == "Paid"]
     pending_recs = [r for r in cur_records if r.status != "Paid"]
-    monthly = {}
+    chart_keys, chart_labels = [], []
     for i in range(5, -1, -1):
         m = today.month - i; y = today.year
         while m <= 0: m += 12; y -= 1
-        monthly[datetime(y, m, 1).strftime("%b")] = 0
-    for r in RentRecord.query.filter_by(status="Paid").all():
+        chart_keys.append(f"{y}-{m:02d}")
+        chart_labels.append(datetime(y, m, 1).strftime("%b"))
+    chart_start = date(int(chart_keys[0][:4]), int(chart_keys[0][5:7]), 1)
+    monthly_by_key = {k: 0.0 for k in chart_keys}
+    for r in (RentRecord.query
+              .filter(RentRecord.paid_amount.isnot(None),
+                      RentRecord.payment_date >= chart_start,
+                      RentRecord.payment_date < month_end)
+              .with_entities(RentRecord.payment_date, RentRecord.paid_amount).all()):
         if r.payment_date:
-            k = r.payment_date.strftime("%b")
-            if k in monthly: monthly[k] += (r.paid_amount or r.rent_amount)
+            k = r.payment_date.strftime("%Y-%m")
+            if k in monthly_by_key:
+                monthly_by_key[k] += (r.paid_amount or 0.0)
+    monthly = {label: monthly_by_key[key] for label, key in zip(chart_labels, chart_keys)}
     total_common = db.session.query(
         db.func.coalesce(db.func.sum(CommonExpense.amount), 0.0)
     ).filter(

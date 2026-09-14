@@ -76,7 +76,9 @@
           <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Deposit</td><td style="color:var(--text-dim);padding:.6rem 1rem;">₹{{ "{:,.0f}".format(tenant.deposit or 0) }}</td></tr>
           <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Due Date</td><td style="color:var(--text-dim);padding:.6rem 1rem;">{{ tenant.get_due_day() }}th of every month</td></tr>
           <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Status</td><td style="padding:.6rem 1rem;">
-            {% if tenant.status=='Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
+            {% if tenant.occupancy_status == 'Vacated' %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Vacated</span>
+            {% elif tenant.status=='Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
+            {% elif tenant.status=='Partial' %}<span class="badge" style="background:rgba(168,85,247,.12);color:#c084fc;border:1px solid rgba(168,85,247,.25);"><span class="b-dot" style="background:#c084fc"></span>Partial</span>
             {% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}
           </td></tr>
           <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Paid On</td><td style="color:{% if tenant.payment_date %}#4ade80{% else %}var(--text-faint){% endif %};padding:.6rem 1rem;">{{ tenant.payment_date.strftime("%d %b %Y") if tenant.payment_date else '—' }}</td></tr>
@@ -105,7 +107,7 @@
       <div style="font-size:.75rem;color:var(--text-faint);font-weight:600;letter-spacing:.04em;">PROFILE PHOTO</div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;">
         {% if tenant.photo_path %}
-        <a href="{{ tenant.photo_path if tenant.photo_path.startswith('http') else '/static/uploads/' + tenant.photo_path }}" target="_blank" class="btn btn-ghost btn-sm"><i class="bi bi-person-square" style="color:var(--blue);"></i> View</a>
+        <a href="{{ file_url(tenant.photo_path) }}" target="_blank" class="btn btn-ghost btn-sm"><i class="bi bi-person-square" style="color:var(--blue);"></i> View</a>
         {% endif %}
         <!-- Change / Add photo -->
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('photoUploadForm').style.display=document.getElementById('photoUploadForm').style.display==='none'?'block':'none'" style="color:var(--gold);">
@@ -135,7 +137,7 @@
       <div style="font-size:.75rem;color:var(--text-faint);font-weight:600;letter-spacing:.04em;">AGREEMENT</div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;">
         {% if tenant.agreement_path %}
-        <a href="{{ tenant.agreement_path if tenant.agreement_path.startswith('http') else '/static/uploads/' + tenant.agreement_path }}" target="_blank" class="btn btn-ghost btn-sm"><i class="bi bi-file-earmark-text" style="color:var(--green);"></i> View</a>
+        <a href="{{ file_url(tenant.agreement_path) }}" target="_blank" class="btn btn-ghost btn-sm"><i class="bi bi-file-earmark-text" style="color:var(--green);"></i> View</a>
         {% endif %}
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('agreementUploadForm').style.display=document.getElementById('agreementUploadForm').style.display==='none'?'block':'none'" style="color:var(--gold);">
           <i class="bi bi-pencil"></i> {{ 'Change' if tenant.agreement_path else 'Add' }}
@@ -198,12 +200,21 @@
 {% endif %}
 
 <!-- Monthly Rent History -->
-<!-- Payment summary for vacated tenants -->
-{% if tenant.occupancy_status == 'Vacated' and records %}
-{% set paid_records = records | selectattr('status', 'equalto', 'Paid') | list %}
-{% set total_rent = records | sum(attribute='rent_amount') %}
-{% set total_paid = paid_records | sum(attribute='paid_amount') %}
-{% set pending_count = records | rejectattr('status', 'equalto', 'Paid') | list | length %}
+<!-- Payment summary — shown for every tenant, active or vacated -->
+{% if records %}
+{% set _s = namespace(total_billed=0, total_collected=0, paid_cnt=0, partial_cnt=0, pending_cnt=0) %}
+{% for r in records %}
+  {% set _s.total_billed = _s.total_billed + (r.rent_amount or 0) %}
+  {% if r.status == 'Paid' %}
+    {% set _s.total_collected = _s.total_collected + (r.paid_amount or r.rent_amount or 0) %}
+    {% set _s.paid_cnt = _s.paid_cnt + 1 %}
+  {% elif r.status == 'Partial' %}
+    {% set _s.total_collected = _s.total_collected + (r.paid_amount or 0) %}
+    {% set _s.partial_cnt = _s.partial_cnt + 1 %}
+  {% else %}
+    {% set _s.pending_cnt = _s.pending_cnt + 1 %}
+  {% endif %}
+{% endfor %}
 <div class="card fade-up d3" style="margin-bottom:1rem;border-color:rgba(251,191,36,.2);background:rgba(251,191,36,.04);">
   <div class="card-header" style="background:rgba(251,191,36,.06);">
     <span><i class="bi bi-wallet2" style="margin-right:6px;color:var(--gold);"></i>Payment Summary</span>
@@ -215,24 +226,30 @@
     </div>
     <div style="text-align:center;">
       <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">MONTHS PAID</div>
-      <div style="font-size:1.4rem;font-weight:700;color:#4ade80;">{{ paid_records|length }}</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#4ade80;">{{ _s.paid_cnt }}</div>
     </div>
+    {% if _s.partial_cnt %}
+    <div style="text-align:center;">
+      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">PARTIAL</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#c084fc;">{{ _s.partial_cnt }}</div>
+    </div>
+    {% endif %}
     <div style="text-align:center;">
       <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">PENDING</div>
-      <div style="font-size:1.4rem;font-weight:700;color:#fbbf24;">{{ pending_count }}</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#fbbf24;">{{ _s.pending_cnt }}</div>
     </div>
     <div style="border-left:1px solid var(--border);padding-left:2rem;text-align:center;">
       <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">TOTAL BILLED</div>
-      <div style="font-size:1.4rem;font-weight:700;color:var(--text);">₹{{ "{:,.0f}".format(total_rent) }}</div>
+      <div style="font-size:1.4rem;font-weight:700;color:var(--text);">₹{{ "{:,.0f}".format(_s.total_billed) }}</div>
     </div>
     <div style="text-align:center;">
       <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">TOTAL COLLECTED</div>
-      <div style="font-size:1.4rem;font-weight:700;color:#4ade80;">₹{{ "{:,.0f}".format(total_paid) }}</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#4ade80;">₹{{ "{:,.0f}".format(_s.total_collected) }}</div>
     </div>
-    {% if total_rent > total_paid %}
+    {% if _s.total_billed > _s.total_collected %}
     <div style="text-align:center;">
       <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">OUTSTANDING</div>
-      <div style="font-size:1.4rem;font-weight:700;color:#f87171;">₹{{ "{:,.0f}".format(total_rent - total_paid) }}</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#f87171;">₹{{ "{:,.0f}".format(_s.total_billed - _s.total_collected) }}</div>
     </div>
     {% endif %}
   </div>
@@ -271,10 +288,10 @@
         {% if r.status == 'Paid' and r.payment_screenshot %}
         <tr id="ss_{{ r.id }}" style="display:none;">
           <td colspan="9" style="text-align:center;background:var(--surface2);padding:1rem 1.5rem;border-top:1px solid var(--border);">
-            <img src="{{ r.payment_screenshot if r.payment_screenshot.startswith('http') else '/static/uploads/' + r.payment_screenshot }}"
+            <img src="{{ file_url(r.payment_screenshot) }}"
                  alt="Payment screenshot"
                  style="max-height:300px;max-width:100%;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;"
-                 onclick="window.open('{{ r.payment_screenshot if r.payment_screenshot.startswith('http') else '/static/uploads/' + r.payment_screenshot }}','_blank')"
+                 onclick="window.open('{{ file_url(r.payment_screenshot) }}','_blank')"
                  title="Click to open full size">
             {% if r.transaction_id %}
             <div style="margin-top:.5rem;font-size:.75rem;color:var(--text-faint);font-family:monospace;">

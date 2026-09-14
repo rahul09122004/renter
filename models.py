@@ -119,7 +119,7 @@ class CommonExpense(db.Model):
     description = db.Column(db.String(200), nullable=False)
     amount      = db.Column(db.Float, nullable=False)
     category    = db.Column(db.String(80), default="Other")
-    split_units = db.Column(db.Integer, default=6)
+    split_units = db.Column(db.Integer, default=5)
     date        = db.Column(db.Date, nullable=False, default=datetime.utcnow)
     notes       = db.Column(db.Text, nullable=True)
     created_at  = db.Column(db.DateTime, default=datetime.utcnow)
@@ -259,6 +259,10 @@ def init_db(app):
                     conn.execute(text(
                         "ALTER TABLE admin ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP"
                     ))
+                    # ── Rent records: carry-forward tracking for partial payments ──
+                    conn.execute(text(
+                        "ALTER TABLE rent_records ADD COLUMN IF NOT EXISTS carried_out_amount FLOAT DEFAULT 0"
+                    ))
                 else:  # SQLite
                     try:
                         conn.execute(text("ALTER TABLE tenants ADD COLUMN due_day INTEGER DEFAULT 5"))
@@ -288,6 +292,10 @@ def init_db(app):
                             conn.execute(text(f"ALTER TABLE admin ADD COLUMN {col} {coltype}"))
                         except Exception:
                             pass  # already exists
+                    try:
+                        conn.execute(text("ALTER TABLE rent_records ADD COLUMN carried_out_amount FLOAT DEFAULT 0"))
+                    except Exception:
+                        pass  # already exists
                 conn.commit()
         except Exception as ex:
             print(f"[Migration] due_day: {ex}")  # log but never crash startup
@@ -410,6 +418,7 @@ class RentRecord(db.Model):
     notes            = db.Column(db.Text, nullable=True)
     created_at       = db.Column(db.DateTime, default=datetime.utcnow)
     carried_forward  = db.Column(db.Boolean, default=False)    # True if unpaid from prev month
+    carried_out_amount = db.Column(db.Float, default=0.0)      # shortfall from THIS month already pushed onto next month's rent_amount
 
     tenant = db.relationship("Tenant", backref="rent_records")
 
@@ -433,9 +442,16 @@ class RentRecord(db.Model):
         """Status label accounting for arrears billing: a tenant's join-month
         record shows 'New Join' instead of 'Pending', since that month's rent
         isn't due until the following month's cycle."""
-        if self.status != "Paid" and self.is_new_join_month():
+        if self.status not in ("Paid",) and self.is_new_join_month():
             return "New Join"
         return self.status
+
+    def balance_due(self):
+        """Remaining unpaid amount on this record (0 if fully paid)."""
+        if self.status == "Paid":
+            return 0.0
+        paid = self.paid_amount or 0.0
+        return max(0.0, round((self.rent_amount or 0.0) - paid, 2))
 
     def is_overdue(self, today=None):
         """Whether this record should be flagged overdue — excludes the join
