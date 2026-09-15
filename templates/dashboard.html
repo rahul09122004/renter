@@ -200,7 +200,7 @@ function loadCharts() {
 
   // Per-bar colours: current month = green, past = gold
   const barColors  = labels.map(l => l === todayLabel ? 'rgba(74,222,128,.75)' : 'rgba(232,160,32,.55)');
-  const borderColors = labels.map(l => l === todayLabel ? '#4ade80' : '#e8a020');
+  const borderColors = labels.map(l => l === todayLabel ? '#4ade80' : '#C68A3D');
 
   new Chart(ctx1, {
     type: 'bar',
@@ -225,8 +225,8 @@ function loadCharts() {
             title: t => t[0].label,
             label: c => ' ₹' + c.raw.toLocaleString('en-IN')
           },
-          backgroundColor: '#1e2535', borderColor: 'rgba(255,255,255,0.08)',
-          borderWidth: 1, titleColor: '#e8eaf0', bodyColor: '#8b93a8', padding: 10
+          backgroundColor: '#241F17', borderColor: 'rgba(255,255,255,0.08)',
+          borderWidth: 1, titleColor: '#e8eaf0', bodyColor: '#A79B85', padding: 10
         }
       },
       scales: {
@@ -235,7 +235,7 @@ function loadCharts() {
           suggestedMax: maxVal * 1.15,
           grid: { color: 'rgba(255,255,255,0.05)' },
           ticks: {
-            color: '#4a5168',
+            color: '#5C5344',
             callback: v => v === 0 ? '₹0' : '₹' + (v >= 100000 ? (v/100000).toFixed(1)+'L' : (v/1000).toFixed(0)+'k')
           },
           border: { display: false }
@@ -243,7 +243,7 @@ function loadCharts() {
         x: {
           grid: { display: false },
           ticks: {
-            color: ctx => ctx.tick.label === todayLabel ? '#4ade80' : '#4a5168',
+            color: ctx => ctx.tick.label === todayLabel ? '#4ade80' : '#5C5344',
             font: ctx => ({ weight: ctx.tick.label === todayLabel ? '700' : '400' })
           },
           border: { display: false }
@@ -282,8 +282,8 @@ function loadCharts() {
               return total > 0 ? '  ' + ((c.raw/total)*100).toFixed(1) + '%' : '';
             }
           },
-          backgroundColor: '#1e2535', borderColor: 'rgba(255,255,255,0.08)',
-          borderWidth: 1, titleColor: '#e8eaf0', bodyColor: '#8b93a8', padding: 10
+          backgroundColor: '#241F17', borderColor: 'rgba(255,255,255,0.08)',
+          borderWidth: 1, titleColor: '#e8eaf0', bodyColor: '#A79B85', padding: 10
         }
       },
       cutout: '62%'

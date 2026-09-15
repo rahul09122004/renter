@@ -74,6 +74,22 @@ class Tenant(db.Model):
             return False
         return self.join_date.month == month and self.join_date.year == year
 
+    def current_billing_period(self, today=None):
+        """(month, year) of the RentRecord that's currently payable for this
+        tenant right now, under arrears billing: normally the PREVIOUS
+        calendar month (you use a month, then pay for it starting the
+        following month). A tenant who joined THIS calendar month has no
+        completed prior month yet, so their current period is this month's
+        own (not-yet-due) record instead."""
+        from datetime import date as _date
+        today = today or _date.today()
+        if self.is_join_month(today.month, today.year):
+            return today.month, today.year
+        m, y = today.month - 1, today.year
+        if m < 1:
+            m, y = 12, y - 1
+        return m, y
+
     def to_dict(self):
         return {
             "id": self.id, "name": self.name, "phone": self.phone,
@@ -433,16 +449,40 @@ class RentRecord(db.Model):
         from datetime import date
         return date(self.year, self.month, 1).strftime("%B %Y")
 
+    def due_month_year(self):
+        """Rent is billed in arrears: this record is FOR usage during
+        (self.month, self.year), but isn't due until the FOLLOWING
+        calendar month — e.g. September's rent is due starting October."""
+        m = self.month + 1
+        y = self.year
+        if m > 12:
+            m = 1
+            y += 1
+        return m, y
+
+    def is_not_yet_due(self, today=None):
+        """True if this record's due month hasn't started yet — i.e. the
+        tenant hasn't finished using this billing period, so nothing is
+        collectible for it yet. This is what drives the 'New Join' /
+        'not due yet' display everywhere, regardless of literal join date:
+        it's a pure due-date calculation, so it stays correct for any
+        record on any page (Tracker, History, CA Audit, ...)."""
+        from datetime import date as _date
+        today = today or _date.today()
+        due_m, due_y = self.due_month_year()
+        return (today.year, today.month) < (due_y, due_m)
+
     def is_new_join_month(self):
-        """True if this record's month is the tenant's join month — rent for
-        this month is billed in arrears next month, so it's not due yet."""
-        return bool(self.tenant) and self.tenant.is_join_month(self.month, self.year)
+        """Kept as the existing name used across templates — now backed by
+        due-date arithmetic rather than a literal join-date comparison, so
+        it's correct for arrears billing: true only while this record's
+        usage period hasn't reached its due month yet."""
+        return self.is_not_yet_due()
 
     def effective_status(self):
-        """Status label accounting for arrears billing: a tenant's join-month
-        record shows 'New Join' instead of 'Pending', since that month's rent
-        isn't due until the following month's cycle."""
-        if self.status not in ("Paid",) and self.is_new_join_month():
+        """Status label accounting for arrears billing: a record whose due
+        month hasn't arrived yet shows 'New Join' instead of 'Pending'."""
+        if self.status != "Paid" and self.is_not_yet_due():
             return "New Join"
         return self.status
 
@@ -454,15 +494,16 @@ class RentRecord(db.Model):
         return max(0.0, round((self.rent_amount or 0.0) - paid, 2))
 
     def is_overdue(self, today=None):
-        """Whether this record should be flagged overdue — excludes the join
-        month, since that rent isn't due yet."""
+        """Whether this record should be flagged overdue, under arrears
+        billing: a record for usage month M becomes payable starting month
+        M+1, and overdue once due_day of month M+1 has passed unpaid."""
         from datetime import date as _date
         today = today or _date.today()
-        if self.status == "Paid" or self.is_new_join_month():
+        if self.status == "Paid" or self.is_not_yet_due(today):
             return False
-        if self.year != today.year or self.month != today.month:
-            # Any unpaid record from a past month (not the join month) is overdue.
-            return (self.year, self.month) < (today.year, today.month)
+        due_m, due_y = self.due_month_year()
+        if (today.year, today.month) > (due_y, due_m):
+            return True  # the whole due month has already passed, still unpaid
         due_day = self.tenant.get_due_day() if self.tenant else 5
         return today.day > due_day
 

@@ -2,18 +2,21 @@
 {% block title %}Login — RentManager{% endblock %}
 {% block auth_content %}
 <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:1rem;position:relative;overflow:hidden;">
-  <div style="position:absolute;width:600px;height:600px;background:radial-gradient(circle,rgba(232,160,32,0.06) 0%,transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;"></div>
+  <!-- Subtle ledger-ruling texture instead of a generic radial glow -->
+  <div style="position:absolute;inset:0;pointer-events:none;opacity:.5;
+    background-image:repeating-linear-gradient(180deg,transparent,transparent 34px,rgba(198,138,61,0.035) 34px,rgba(198,138,61,0.035) 35px);"></div>
+  <div style="position:absolute;width:520px;height:520px;background:radial-gradient(circle,rgba(198,138,61,0.07) 0%,transparent 70%);top:38%;left:50%;transform:translate(-50%,-50%);pointer-events:none;"></div>
 
-  <div style="width:100%;max-width:420px;position:relative;animation:fadeUp 0.5s ease both;">
+  <div style="width:100%;max-width:400px;position:relative;animation:fadeUp 0.5s ease both;">
     <div style="text-align:center;margin-bottom:2rem;">
-      <div style="width:52px;height:52px;background:var(--gold);border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-size:1.4rem;color:#0f1117;margin-bottom:1rem;box-shadow:0 8px 32px var(--gold-glow);">
+      <div style="width:50px;height:50px;background:var(--gold);border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:1.3rem;color:#14110D;margin-bottom:1.1rem;">
         <i class="bi bi-building"></i>
       </div>
-      <div style="font-family:'Playfair Display',serif;font-size:1.5rem;color:var(--text);margin-bottom:4px;">RentManager</div>
-      <div style="font-size:0.78rem;color:var(--text-faint);letter-spacing:0.06em;text-transform:uppercase;">Admin Portal</div>
+      <div style="font-family:var(--font-serif);font-weight:600;font-size:1.6rem;color:var(--text);margin-bottom:5px;letter-spacing:-.01em;">RentManager</div>
+      <div style="font-size:0.72rem;color:var(--text-faint);letter-spacing:0.1em;text-transform:uppercase;">Admin Portal</div>
     </div>
 
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.75rem;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid var(--gold);border-radius:var(--radius-lg);padding:1.85rem;">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for cat, msg in messages %}
           <div class="alert alert-{{ cat }}" style="margin-bottom:1.25rem;">
@@ -26,11 +29,11 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group" style="margin-bottom:1rem;">
           <label>Username</label>
-          <input class="form-control" type="text" name="username" placeholder="admin" required autofocus style="font-size:1rem;" />
+          <input class="form-control" type="text" name="username" placeholder="admin" required autofocus style="font-size:1rem;padding:.65rem .85rem;" />
         </div>
         <div class="form-group" style="margin-bottom:1.75rem;">
           <label>Password</label>
-          <input class="form-control" type="password" name="password" placeholder="••••••••" required style="font-size:1rem;" />
+          <input class="form-control" type="password" name="password" placeholder="••••••••" required style="font-size:1rem;padding:.65rem .85rem;" />
         </div>
         <button type="submit" class="btn btn-gold" style="width:100%;padding:.75rem;font-size:.95rem;justify-content:center;">
           <i class="bi bi-arrow-right-circle"></i> Sign in

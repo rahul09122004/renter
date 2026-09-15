@@ -51,7 +51,8 @@
   <div class="table-controls">
     <div class="table-title">
       <i class="bi bi-table" style="margin-right:6px;color:var(--gold);"></i>
-      All Units — {{ today.strftime("%B %Y") }}
+      All Units — Current Billing Cycle
+      <span style="font-size:.72rem;color:var(--text-faint);margin-left:6px;font-weight:400;">(rent billed in arrears — each renter's card shows their last completed month, due now)</span>
       <span style="font-size:.72rem;color:var(--text-faint);margin-left:8px;">· Click any row for details</span>
     </div>
     <a href="{{ url_for('add_renter') }}" class="btn btn-gold btn-sm"><i class="bi bi-plus-lg"></i> Add Renter</a>
@@ -68,7 +69,7 @@
       </thead>
       <tbody>
         {% for t in tenants %}
-        {% set colors = ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
+        {% set colors = ['#C68A3D','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
         {% set color = colors[loop.index0 % colors|length] %}
         {% set rec = record_by_tenant.get(t.id) %}
         <tr {% if rec and rec.is_overdue(today) %}class="row-overdue"{% endif %}
@@ -87,7 +88,9 @@
           </td>
           <td style="color:var(--text-dim);font-size:.82rem;">{{ t.phone }}</td>
           <td style="font-weight:600;color:var(--text);text-align:right;">₹{{ "{:,.0f}".format(t.amount) }}</td>
-          <td style="color:var(--text-dim);">{{ t.get_due_day() }}th of every month</td>
+          <td style="color:var(--text-dim);">{{ t.get_due_day() }}th
+            {% if rec %}<div style="font-size:.68rem;color:var(--text-faint);margin-top:2px;">Bill: {{ rec.month_label() }}</div>{% endif %}
+          </td>
           <td>
             {% if t.status=='Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
             {% elif t.status=='Partial' %}<span class="badge" style="background:rgba(168,85,247,.12);color:#c084fc;border:1px solid rgba(168,85,247,.25);"><span class="b-dot" style="background:#c084fc"></span>Partial{% if rec %} — ₹{{ "{:,.0f}".format(rec.balance_due()) }} due{% endif %}</span>
@@ -154,6 +157,13 @@ const TENANTS = {
   status: {{ t.status | tojson }},
   is_new_join: {{ 'true' if record_by_tenant.get(t.id) and record_by_tenant.get(t.id).is_new_join_month() else 'false' }},
   balance_due: {{ record_by_tenant.get(t.id).balance_due() if record_by_tenant.get(t.id) else 0 }},
+  {% set _rec = record_by_tenant.get(t.id) %}
+  {% if _rec %}{% set _dm, _dy = _rec.due_month_year() %}
+  bill_month_label: {{ _rec.month_label() | tojson }},
+  due_month_label: {{ (["January","February","March","April","May","June","July","August","September","October","November","December"][_dm-1] ~ " " ~ _dy) | tojson }},
+  {% else %}
+  bill_month_label: "", due_month_label: "",
+  {% endif %}
   payment_date: {{ t.payment_date.strftime("%d %b %Y") | tojson if t.payment_date else 'null' }},
   payment_method: {{ (t.payment_method or '') | tojson }},
   transaction_id: {{ (t.transaction_id or '') | tojson }},
@@ -162,7 +172,7 @@ const TENANTS = {
   deposit: {{ t.deposit or 0 }},
   join_date: {{ t.join_date.strftime("%d %b %Y") | tojson if t.join_date else 'null' }},
   notes: {{ (t.notes or '') | tojson }},
-  color: ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'][{{ loop.index0 % 7 }}],
+  color: ['#C68A3D','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'][{{ loop.index0 % 7 }}],
 },
 {% endfor %}
 };
@@ -289,8 +299,8 @@ function openDrawer(id) {
     <div style="background:${t.is_new_join?'rgba(59,130,246,.08)':(t.status==='Partial'?'rgba(168,85,247,.08)':'var(--amber-bg)')};border:1px solid ${t.is_new_join?'rgba(59,130,246,.2)':(t.status==='Partial'?'rgba(168,85,247,.2)':'rgba(245,158,11,.2)')};border-radius:10px;padding:.85rem 1rem;margin-bottom:.85rem;display:flex;align-items:center;gap:10px;">
       <i class="bi ${t.is_new_join?'bi-stars':(t.status==='Partial'?'bi-pie-chart':'bi-hourglass-split')}" style="color:${t.is_new_join?'#60a5fa':(t.status==='Partial'?'#c084fc':'#fbbf24')};font-size:1.1rem;flex-shrink:0;"></i>
       <div>
-        <div style="font-size:.82rem;font-weight:600;color:${t.is_new_join?'#60a5fa':(t.status==='Partial'?'#c084fc':'#fbbf24')};">${t.is_new_join?'New Join — first month billed next cycle':(t.status==='Partial'?'Partial Payment Received':'Rent Pending')}</div>
-        <div style="font-size:.75rem;color:var(--text-dim);margin-top:2px;">${t.is_new_join?`Joined ${t.join_date||'this month'} · rent for this month will be collected along with next month's rent`:(t.status==='Partial'?`₹${t.balance_due.toLocaleString('en-IN')} still due — carried to next month if unpaid`:`Due: ${t.due_date} · ₹${t.amount.toLocaleString('en-IN')}`)}</div>
+        <div style="font-size:.82rem;font-weight:600;color:${t.is_new_join?'#60a5fa':(t.status==='Partial'?'#c084fc':'#fbbf24')};">${t.is_new_join?'New Join — no rent due yet':(t.status==='Partial'?'Partial Payment Received':'Rent Pending')}</div>
+        <div style="font-size:.75rem;color:var(--text-dim);margin-top:2px;">${t.is_new_join?`Joined ${t.join_date||'this month'} · ${t.bill_month_label||'this month'}'s rent (₹${t.amount.toLocaleString('en-IN')}) will be billed as its own separate payment in ${t.due_month_label||'next month'} — not added to any other month's amount`:(t.status==='Partial'?`₹${t.balance_due.toLocaleString('en-IN')} still due — carried to next month if unpaid`:`Due: ${t.due_date} · ₹${t.amount.toLocaleString('en-IN')}`)}</div>
       </div>
     </div>
     <a href="/tenant/verify-payment/${t.id}" class="btn btn-success" style="width:100%;justify-content:center;margin-bottom:.5rem;"><i class="bi bi-check-lg"></i> ${t.status==='Partial'?'Record Remaining Payment':'Mark as Paid'}${t.is_new_join?' Early (optional)':''}</a>

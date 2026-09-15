@@ -370,20 +370,21 @@ def dashboard():
     today = date.today()
     month_start, month_end = _month_bounds(today.year, today.month)
 
-    # ── Single query: current month rent records + tenant in one join ──
-    cur_records = (RentRecord.query
-                   .options(joinedload(RentRecord.tenant))
-                   .join(Tenant, RentRecord.tenant_id == Tenant.id)
-                   .filter(
-                       RentRecord.month == today.month,
-                       RentRecord.year == today.year,
-                       Tenant.occupancy_status == "Active",
-                   )
-                   .all())
+    # Rent is billed in arrears — each tenant's currently-payable record is
+    # for LAST month's usage (see Tenant.current_billing_period()), except a
+    # brand-new tenant whose first (not-yet-due) record is this month's own.
+    active_tenant_list = Tenant.query.filter_by(occupancy_status="Active").all()
+    cur_records = []
+    for t in active_tenant_list:
+        bm, by = t.current_billing_period(today)
+        rec = _get_or_create_record(t.id, bm, by)
+        if rec:
+            cur_records.append(rec)
 
+    billable    = [r for r in cur_records if not r.is_new_join_month()]
     collected   = sum((r.paid_amount or r.rent_amount) if r.status == "Paid" else (r.paid_amount or 0.0)
-                       for r in cur_records if r.status in ("Paid", "Partial"))
-    pending_amt = sum(r.balance_due() for r in cur_records if r.status != "Paid")
+                       for r in billable if r.status in ("Paid", "Partial"))
+    pending_amt = sum(r.balance_due() for r in billable if r.status != "Paid")
     overdue     = [r.tenant for r in cur_records if r.is_overdue(today)]
     new_joins   = [r.tenant for r in cur_records
                    if r.status != "Paid" and r.tenant and r.is_new_join_month()]
@@ -490,37 +491,24 @@ def rent_tracker():
         db.extract("year", Tenant.vacated_date) == today.year,
     )
     tenant_visibility = db.or_(Tenant.occupancy_status == "Active", vacated_this_month)
-
-    # Check if any records exist for this month — single query
-    existing_ids = {r.tenant_id for r in
-        RentRecord.query
-        .filter_by(month=today.month, year=today.year)
-        .with_entities(RentRecord.tenant_id).all()}
-
-    # Only create missing records (batch insert instead of N individual queries)
     active_tenants = Tenant.query.filter(tenant_visibility).all()
-    new_records = []
+
+    # Rent is billed in arrears: each tenant's currently-payable record is
+    # for LAST month's usage (or, for a brand-new tenant, this month's own
+    # not-yet-due record — see Tenant.current_billing_period()). Different
+    # tenants can therefore point at different (month, year) records here.
+    records = []
     for t in active_tenants:
-        if t.id not in existing_ids:
-            new_records.append(RentRecord(
-                tenant_id=t.id, tenant_name=t.name,
-                month=today.month, year=today.year,
-                rent_amount=t.amount, status="Pending"
-            ))
-    if new_records:
-        db.session.bulk_save_objects(new_records)
-        db.session.commit()
+        bm, by = t.current_billing_period(today)
+        rec = _get_or_create_record(t.id, bm, by)
+        if rec:
+            records.append(rec)
 
-    # Load current-month records as the source of truth
-    records = (RentRecord.query
-               .options(joinedload(RentRecord.tenant))
-               .filter_by(month=today.month, year=today.year)
-               .join(Tenant, RentRecord.tenant_id == Tenant.id)
-               .filter(tenant_visibility)
-               .order_by(Tenant.unit)
-               .all())
+    # Sort by unit for a stable display order (was done via SQL ORDER BY before,
+    # now records span two different (month, year) buckets so sort in Python).
+    records.sort(key=lambda r: (r.tenant.unit or "") if r.tenant else "")
 
-    # Sync tenant.status from RentRecord — only update changed ones
+    # Sync tenant.status from each tenant's active record — only update changed ones
     changed = False
     for r in records:
         if r.tenant and r.tenant.status != r.status:
@@ -540,17 +528,21 @@ def rent_tracker():
     tenants = [r.tenant for r in records if r.tenant]
     record_by_tenant = {r.tenant_id: r for r in records}
 
-    total_rent  = sum(r.rent_amount for r in records)
+    # Not-yet-due (brand new join) records don't count toward what's owed yet.
+    billable = [r for r in records if not r.is_new_join_month()]
+    total_rent  = sum(r.rent_amount for r in billable)
     collected   = sum((r.paid_amount or r.rent_amount) if r.status == "Paid" else (r.paid_amount or 0.0)
-                       for r in records if r.status in ("Paid", "Partial"))
-    paid_count    = sum(1 for r in records if r.status == "Paid")
-    partial_count = sum(1 for r in records if r.status == "Partial")
-    pending_count = sum(1 for r in records if r.status not in ("Paid", "Partial"))
+                       for r in billable if r.status in ("Paid", "Partial"))
+    paid_count     = sum(1 for r in billable if r.status == "Paid")
+    partial_count  = sum(1 for r in billable if r.status == "Partial")
+    pending_count  = sum(1 for r in billable if r.status not in ("Paid", "Partial"))
+    new_join_count = sum(1 for r in records if r.is_new_join_month())
 
     return render_template("rent_tracker.html", tenants=tenants, records=records,
                             record_by_tenant=record_by_tenant, today=today,
                             total_rent=total_rent, collected=collected,
-                            paid_count=paid_count, partial_count=partial_count, pending_count=pending_count)
+                            paid_count=paid_count, partial_count=partial_count,
+                            pending_count=pending_count, new_join_count=new_join_count)
 
 # ── MONTHLY HISTORY ───────────────────────────────────────────────────────────
 @app.route("/rent-history")
@@ -771,8 +763,11 @@ def verify_payment(tid):
         if screenshot_fn:
             t.payment_screenshot = screenshot_fn
         db.session.commit()
-        # Write to monthly history
-        rec = _get_or_create_record(t.id, today.month, today.year)
+        # Write to monthly history — the record for the tenant's CURRENT
+        # billing period (last month's usage, under arrears billing; or
+        # this month's own record if they just joined).
+        bm, by = t.current_billing_period(today)
+        rec = _get_or_create_record(t.id, bm, by)
         if rec:
             rec.status = new_status; rec.paid_amount = paid_amount
             rec.payment_date = today; rec.payment_method = pay_method
@@ -862,8 +857,9 @@ def force_mark_paid(tid):
     t.transaction_id     = request.form.get("transaction_id", "—")
     t.payment_screenshot = request.form.get("screenshot_fn", "") or t.payment_screenshot
     db.session.commit()
-    # Write to monthly history
-    rec = _get_or_create_record(t.id, today.month, today.year)
+    # Write to monthly history — same arrears-aware billing period as elsewhere
+    bm, by = t.current_billing_period(today)
+    rec = _get_or_create_record(t.id, bm, by)
     if rec:
         rec.status = new_status; rec.paid_amount = paid_amount
         rec.payment_date = today; rec.payment_method = t.payment_method
@@ -885,8 +881,9 @@ def mark_unpaid(tid):
     t.status = "Pending"; t.payment_date = None
     t.payment_method = None; t.transaction_id = None; t.payment_screenshot = None
     db.session.commit()
-    # Also revert this month's record
-    rec = RentRecord.query.filter_by(tenant_id=t.id, month=today.month, year=today.year).first()
+    # Also revert the tenant's current billing-period record
+    bm, by = t.current_billing_period(today)
+    rec = RentRecord.query.filter_by(tenant_id=t.id, month=bm, year=by).first()
     if rec:
         rec.status = "Pending"; rec.paid_amount = None; rec.payment_date = None
         db.session.commit()
@@ -902,9 +899,13 @@ def remind_tenant(tid):
     status  = "failed"
     log_msg = f"Reminder via {channel}"
 
+    bm, by = t.current_billing_period(date.today())
+    cur_rec = RentRecord.query.filter_by(tenant_id=t.id, month=bm, year=by).first()
+    remind_amount = cur_rec.balance_due() if cur_rec and cur_rec.balance_due() else t.amount
+
     if channel == "whatsapp":
         result = send_rent_reminder(to_phone=t.phone, tenant_name=t.name,
-            amount=t.amount, due_date=f"{t.get_due_day()}th of every month")
+            amount=remind_amount, due_date=f"{t.get_due_day()}th of every month")
         if "error" not in result:
             status = "sent"
         else:
@@ -914,7 +915,7 @@ def remind_tenant(tid):
                          t.name, t.phone, result)
 
     elif channel == "sms":
-        msg = (f"Hi {t.name}, rent Rs.{t.amount:,.0f} due on "
+        msg = (f"Hi {t.name}, rent Rs.{remind_amount:,.0f} due on "
                f"the {t.get_due_day()}th of every month. Please pay. -RentManager")
         result = send_sms(t.phone, msg)
         if result.get("success"):
@@ -950,9 +951,10 @@ def renters():
 def renter_detail(tid):
     t    = Tenant.query.get_or_404(tid)
     logs = ReminderLog.query.filter_by(tenant_id=tid).order_by(ReminderLog.sent_at.desc()).all()
-    # Ensure current month record exists for active tenants
+    # Ensure the current billing-period record exists for active tenants
     if t.occupancy_status == "Active":
-        _get_or_create_record(t.id, date.today().month, date.today().year)
+        bm, by = t.current_billing_period(date.today())
+        _get_or_create_record(t.id, bm, by)
     # Monthly rent history — last 24 months from RentRecord
     records = (RentRecord.query.filter_by(tenant_id=tid)
                .order_by(RentRecord.year.desc(), RentRecord.month.desc())
