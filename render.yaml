@@ -1,21 +1,56 @@
+# Render blueprint. Secrets use `sync: false`, which makes Render ask for the value
+# in the dashboard — they are NEVER stored in this (committed) file.
 services:
   - type: web
     name: rent-manager
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --workers 4 --bind 0.0.0.0:$PORT --timeout 60 --worker-class gthread --threads 2
+    startCommand: gunicorn app:app --workers 2 --bind 0.0.0.0:$PORT --timeout 60 --worker-class gthread --threads 2 --access-logfile - --error-logfile - --log-level info
+    healthCheckPath: /health
     envVars:
+      - key: APP_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      # Generated once by Render (random, 32+ chars) — signs sessions and email links.
       - key: SECRET_KEY
         generateValue: true
+      # Optional. Only used to create the FIRST admin. If omitted/weak, a random
+      # one-time password is generated and printed once in the deploy log.
       - key: ADMIN_PASSWORD
-        generateValue: true   # ⚠️ Auto-generated strong password — check Render dashboard env vars for the value after first deploy
-      - key: FLASK_ENV
-        value: production
+        sync: false
+      # Use Render's *Internal* database URL (private network, not the public internet).
+      - key: DATABASE_URL
+        sync: false
+      # Who may self-register: closed (default) | invite | open
+      - key: SIGNUP_MODE
+        value: closed
+      # e.g. https://your-app.onrender.com  (used for links in emails)
+      - key: PUBLIC_BASE_URL
+        sync: false
+      # Email (verification + password reset)
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      # Integrations (all optional)
       - key: ACCESS_TOKEN
-        value: ""
+        sync: false
       - key: PHONE_NUMBER_ID
-        value: ""
-      - key: ANTHROPIC_API_KEY
-        value: ""
+        sync: false
+      - key: FAST2SMS_KEY
+        sync: false
       - key: OCRSPACE_API_KEY
-        value: "helloworld"
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        sync: false

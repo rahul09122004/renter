@@ -26,7 +26,7 @@
         <div style="font-weight:600;color:var(--text);font-size:.95rem;">{{ tenant.name }}</div>
         <div style="font-size:.78rem;color:var(--text-faint);">
           {{ tenant.unit or '' }}{% if tenant.unit_number %} #{{ tenant.unit_number }}{% endif %}
-          · Due: {{ tenant.get_due_day() }}th of every month
+          · Due: {{ tenant.current_due_date().strftime("%d %b %Y") }}
         </div>
       </div>
       <div style="text-align:right;">
@@ -75,7 +75,7 @@
       <!-- ── Screenshot form ── -->
       <div id="form-screenshot">
         <form method="POST" enctype="multipart/form-data" id="screenshotForm">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="method" value="screenshot">
 
           <div class="drop-zone" id="dropZone" onclick="document.getElementById('screenshotInput').click()">
@@ -103,7 +103,7 @@
       <!-- ── Manual entry form ── -->
       <div id="form-manual" style="display:none;">
         <form method="POST" id="manualForm">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="method" value="manual">
           <div class="form-group" style="margin-bottom:1rem;">
             <label>Amount Paid <span style="font-size:.72rem;color:var(--text-faint);">(₹)</span></label>
@@ -123,7 +123,7 @@
       <!-- ── Cash form ── -->
       <div id="form-cash" style="display:none;">
         <form method="POST" id="cashForm">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="method" value="cash">
           <div class="form-group" style="margin-bottom:1rem;">
             <label>Receipt / Reference <span style="font-size:.72rem;color:var(--text-faint);">(optional)</span></label>
@@ -178,7 +178,7 @@
           Edit the values if OCR is wrong, then confirm.
         </div>
         <form method="POST" action="{{ url_for('force_mark_paid', tid=tenant.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="method" value="upi_screenshot">
           <input type="hidden" name="screenshot_fn" value="{{ screenshot_fn or '' }}">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.9rem;">

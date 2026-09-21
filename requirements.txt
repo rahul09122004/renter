@@ -1,16 +1,29 @@
-Flask>=3.0.3
-Flask-SQLAlchemy>=3.1.1
-Flask-Compress>=1.15
-Flask-WTF>=1.2.1
-Flask-Limiter>=3.8.0
-APScheduler>=3.10.4
-requests>=2.31.0
-python-dotenv>=1.0.1
-Werkzeug>=3.0.3
-gunicorn>=22.0.0
+# Web framework + security layer
+Flask>=3.0.3,<4
+Werkzeug>=3.0.6,<4
+itsdangerous>=2.2.0,<3
+Flask-WTF>=1.2.1,<2          # CSRF protection
+Flask-Limiter>=3.5,<5        # rate limiting / abuse control
+Flask-Compress>=1.15,<2
+
+# Database
+Flask-SQLAlchemy>=3.1.1,<4
+SQLAlchemy>=2.0.30,<3
 psycopg2-binary>=2.9.9
-SQLAlchemy>=2.0.30
+
+# App features
+APScheduler>=3.10.4,<4
+requests>=2.32.4,<3
+urllib3>=2.7.0,<3
+idna>=3.15
+python-dotenv>=1.0.1
 pytz>=2024.1
-Pillow>=10.4.0
+Pillow>=12.3.0              # upload validation + re-encoding (parses untrusted files: keep current)
 openpyxl>=3.1.2
-storage3
+storage3>=2.0,<3             # optional: Supabase private-bucket storage
+
+# Server
+gunicorn>=22.0.0
+
+# Optional: shared rate-limit storage across workers (set RATELIMIT_STORAGE_URI=redis://...)
+# redis>=5

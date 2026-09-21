@@ -5,9 +5,19 @@
 .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.8); z-index:400; align-items:center; justify-content:center; backdrop-filter:blur(6px); }
 .modal-overlay.open { display:flex; }
 .modal-box { background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius-lg); padding:1.5rem; max-width:520px; width:90%; max-height:90vh; overflow-y:auto; animation:fadeUp .25s ease; }
+.summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1rem 1.25rem; }
+.summary-cell { padding:.1rem 0; }
+.summary-label { font-size:.68rem; color:var(--text-faint); font-weight:600; letter-spacing:.06em; text-transform:uppercase; margin-bottom:.25rem; }
+.summary-value { font-size:1.35rem; font-weight:700; line-height:1.15; }
+.summary-sub { font-size:.72rem; color:var(--text-faint); margin-top:.15rem; }
+.summary-bar { height:6px; background:var(--surface2); border-radius:4px; overflow:hidden; margin-top:.4rem; }
+.summary-bar span { display:block; height:100%; border-radius:4px; transition:width .4s ease; }
+.amt-chip { display:inline-block; padding:.25rem .6rem; border-radius:7px; font-size:.75rem; font-weight:600; cursor:pointer; border:1px solid var(--border2); background:var(--surface2); color:var(--text-dim); }
+.amt-chip.on { border-color:var(--gold); color:var(--gold); background:var(--gold-glow); }
+.cycle-note { font-size:.68rem; color:var(--text-faint); margin-top:1px; }
 {% endblock %}
 {% block content %}
-{% set colors = ['#C68A3D','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
+{% set colors = ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
 {% set color = colors[tenant.id % 7] %}
 
 <!-- Header -->
@@ -21,7 +31,6 @@
         {% if tenant.unit %}<span style="background:{{ color }}18;color:{{ color }};border:1px solid {{ color }}35;padding:.1rem .55rem;border-radius:20px;font-size:.72rem;font-weight:600;">{{ tenant.unit }}{% if tenant.unit_number %} #{{ tenant.unit_number }}{% endif %}</span>{% endif %}
         {% if tenant.occupancy_status == 'Vacated' %}<span class="badge b-overdue">Vacated</span>
         {% elif tenant.status == 'Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
-        {% elif today and tenant.is_join_month(today.month, today.year) %}<span class="badge" style="background:var(--blue-bg);color:#60a5fa;border:1px solid rgba(59,130,246,.2);"><span class="b-dot" style="background:#60a5fa"></span>New Join</span>
         {% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}
       </div>
     </div>
@@ -29,7 +38,7 @@
   <div style="display:flex;gap:6px;flex-wrap:wrap;">
     {% if tenant.status == 'Paid' %}
     <form method="POST" action="{{ url_for('mark_unpaid', tid=tenant.id) }}" onsubmit="return confirm('Mark {{ tenant.name }} as unpaid? Payment record will be cleared.')">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-danger btn-sm"><i class="bi bi-x-circle"></i> Mark Unpaid</button>
     </form>
     {% else %}
@@ -73,12 +82,19 @@
       <table>
         <tbody>
           <tr><td style="color:var(--text-faint);width:130px;padding:.6rem 1rem;">Monthly Rent</td><td style="font-weight:700;color:var(--gold);font-size:1rem;padding:.6rem 1rem;">₹{{ "{:,.0f}".format(tenant.amount) }}</td></tr>
-          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Deposit</td><td style="color:var(--text-dim);padding:.6rem 1rem;">₹{{ "{:,.0f}".format(tenant.deposit or 0) }}</td></tr>
-          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Due Date</td><td style="color:var(--text-dim);padding:.6rem 1rem;">{{ tenant.get_due_day() }}th of every month</td></tr>
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Deposit</td><td style="color:var(--text-dim);padding:.6rem 1rem;">
+            ₹{{ "{:,.0f}".format(tenant.deposit or 0) }}
+            {% set dstat = tenant.deposit_status() %}
+            {% if dstat == 'Paid' %}<span class="badge b-paid" style="margin-left:6px;"><span class="b-dot" style="background:#4ade80"></span>Collected</span>
+            {% elif dstat == 'Partial' %}<span class="badge b-pending" style="margin-left:6px;"><span class="b-dot" style="background:#fbbf24"></span>{{ tenant.deposit_percent() }}% collected</span>
+            {% elif dstat == 'Unpaid' %}<span class="badge b-overdue" style="margin-left:6px;"><span class="b-dot" style="background:#f87171"></span>Not collected</span>{% endif %}
+          </td></tr>
+          <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Due Date</td><td style="color:var(--text-dim);padding:.6rem 1rem;">
+            {{ tenant.get_due_day() }}th of the following month
+            <div style="font-size:.72rem;color:var(--text-faint);margin-top:2px;">e.g. September rent is due {{ tenant.get_due_day() }} Oct</div>
+          </td></tr>
           <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Status</td><td style="padding:.6rem 1rem;">
-            {% if tenant.occupancy_status == 'Vacated' %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Vacated</span>
-            {% elif tenant.status=='Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
-            {% elif tenant.status=='Partial' %}<span class="badge" style="background:rgba(168,85,247,.12);color:#c084fc;border:1px solid rgba(168,85,247,.25);"><span class="b-dot" style="background:#c084fc"></span>Partial</span>
+            {% if tenant.status=='Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
             {% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}
           </td></tr>
           <tr><td style="color:var(--text-faint);padding:.6rem 1rem;">Paid On</td><td style="color:{% if tenant.payment_date %}#4ade80{% else %}var(--text-faint){% endif %};padding:.6rem 1rem;">{{ tenant.payment_date.strftime("%d %b %Y") if tenant.payment_date else '—' }}</td></tr>
@@ -115,14 +131,14 @@
         </button>
         {% if tenant.photo_path %}
         <form method="POST" action="{{ url_for('delete_renter_file', tid=tenant.id, field='photo') }}" onsubmit="return confirm('Remove profile photo?')" style="display:inline;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-ghost btn-sm" style="color:#f87171;"><i class="bi bi-trash"></i> Delete</button>
         </form>
         {% endif %}
       </div>
       <div id="photoUploadForm" style="display:none;margin-top:.3rem;">
         <form method="POST" action="{{ url_for('edit_renter', tid=tenant.id) }}" enctype="multipart/form-data" style="display:flex;gap:.5rem;align-items:center;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="_photo_only" value="1">
           <input type="file" name="photo" accept="image/*,.pdf" class="form-control" style="font-size:.8rem;padding:.3rem .5rem;max-width:220px;">
           <button class="btn btn-sm" style="background:var(--gold);color:#000;font-weight:600;">Upload</button>
@@ -144,14 +160,14 @@
         </button>
         {% if tenant.agreement_path %}
         <form method="POST" action="{{ url_for('delete_renter_file', tid=tenant.id, field='agreement') }}" onsubmit="return confirm('Remove agreement file?')" style="display:inline;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-ghost btn-sm" style="color:#f87171;"><i class="bi bi-trash"></i> Delete</button>
         </form>
         {% endif %}
       </div>
       <div id="agreementUploadForm" style="display:none;margin-top:.3rem;">
         <form method="POST" action="{{ url_for('edit_renter', tid=tenant.id) }}" enctype="multipart/form-data" style="display:flex;gap:.5rem;align-items:center;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="_agreement_only" value="1">
           <input type="file" name="agreement" accept="image/*,.pdf" class="form-control" style="font-size:.8rem;padding:.3rem .5rem;max-width:220px;">
           <button class="btn btn-sm" style="background:var(--gold);color:#000;font-weight:600;">Upload</button>
@@ -173,15 +189,24 @@
   <div class="card-body" style="padding:0;">
     <table>
       <tbody>
-        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;width:180px;">Deposit Held</td><td style="color:#60a5fa;font-weight:600;padding:.5rem 1rem;">₹{{ "{:,.0f}".format(settlement.deposit_held or 0) }}</td></tr>
-        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Repair — Charged / Actual Spend</td><td style="padding:.5rem 1rem;">₹{{ "{:,.0f}".format(settlement.repair_cost or 0) }} / ₹{{ "{:,.0f}".format(settlement.repair_actual_cost or 0) }}</td></tr>
-        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Painting — Charged / Actual Spend</td><td style="padding:.5rem 1rem;">₹{{ "{:,.0f}".format(settlement.other_deduction or 0) }} / ₹{{ "{:,.0f}".format(settlement.other_actual_cost or 0) }}</td></tr>
-        {% if settlement.profit_kept() > 0 %}
-        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Profit Kept</td><td style="color:#a78bfa;font-weight:600;padding:.5rem 1rem;">₹{{ "{:,.0f}".format(settlement.profit_kept()) }}</td></tr>
+        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;width:220px;">Deposit Collected</td><td style="color:#60a5fa;font-weight:600;padding:.5rem 1rem;">₹{{ "{:,.0f}".format(settlement.deposit_held or 0) }}</td></tr>
+        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Repair — Charged to Tenant</td><td style="color:#f87171;padding:.5rem 1rem;">− ₹{{ "{:,.0f}".format(settlement.repair_charged or settlement.repair_cost or 0) }}</td></tr>
+        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;padding-left:1.75rem;font-size:.8rem;">↳ Actually spent on repairs</td><td style="color:var(--text-dim);padding:.5rem 1rem;font-size:.82rem;">₹{{ "{:,.0f}".format(settlement.repair_actual or 0) }}</td></tr>
+        {% set margin = settlement.repair_profit() %}
+        <tr style="background:rgba(34,197,94,.05);">
+          <td style="color:var(--text-faint);padding:.5rem 1rem;padding-left:1.75rem;font-size:.8rem;">↳ Margin retained</td>
+          <td style="padding:.5rem 1rem;font-weight:600;color:{% if margin > 0 %}#4ade80{% elif margin < 0 %}#f87171{% else %}var(--text-faint){% endif %};">
+            {% if margin >= 0 %}+{% else %}−{% endif %} ₹{{ "{:,.0f}".format(margin|abs) }}
+            <span style="font-size:.72rem;color:var(--text-faint);font-weight:400;margin-left:5px;">{% if margin > 0 %}profit from deposit{% elif margin < 0 %}loss — spent more than charged{% else %}break-even{% endif %}</span>
+          </td>
+        </tr>
+        {% if settlement.unpaid_rent %}
+        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Unpaid Rent Recovered</td><td style="color:#f87171;padding:.5rem 1rem;">
+          − ₹{{ "{:,.0f}".format(settlement.unpaid_rent or 0) }}
+          {% if settlement.unpaid_rent_note %}<div style="font-size:.72rem;color:var(--text-faint);margin-top:2px;">{{ settlement.unpaid_rent_note }}</div>{% endif %}
+        </td></tr>
         {% endif %}
-        {% if settlement.pending_rent_deducted %}
-        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Unpaid Rent Recovered</td><td style="color:#f87171;padding:.5rem 1rem;">− ₹{{ "{:,.0f}".format(settlement.pending_rent_deducted) }}</td></tr>
-        {% endif %}
+        <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Other Deductions</td><td style="color:#f87171;padding:.5rem 1rem;">− ₹{{ "{:,.0f}".format(settlement.other_deduction or 0) }}</td></tr>
         {% if settlement.deduction_notes %}
         <tr><td style="color:var(--text-faint);padding:.5rem 1rem;">Notes</td><td style="color:var(--text-dim);font-size:.82rem;padding:.5rem 1rem;">{{ settlement.deduction_notes }}</td></tr>
         {% endif %}
@@ -199,59 +224,178 @@
 </div>
 {% endif %}
 
-<!-- Monthly Rent History -->
-<!-- Payment summary — shown for every tenant, active or vacated -->
-{% if records %}
-{% set _s = namespace(total_billed=0, total_collected=0, paid_cnt=0, partial_cnt=0, pending_cnt=0) %}
-{% for r in records %}
-  {% set _s.total_billed = _s.total_billed + (r.rent_amount or 0) %}
-  {% if r.status == 'Paid' %}
-    {% set _s.total_collected = _s.total_collected + (r.paid_amount or r.rent_amount or 0) %}
-    {% set _s.paid_cnt = _s.paid_cnt + 1 %}
-  {% elif r.status == 'Partial' %}
-    {% set _s.total_collected = _s.total_collected + (r.paid_amount or 0) %}
-    {% set _s.partial_cnt = _s.partial_cnt + 1 %}
-  {% else %}
-    {% set _s.pending_cnt = _s.pending_cnt + 1 %}
-  {% endif %}
-{% endfor %}
-<div class="card fade-up d3" style="margin-bottom:1rem;border-color:rgba(251,191,36,.2);background:rgba(251,191,36,.04);">
-  <div class="card-header" style="background:rgba(251,191,36,.06);">
+<!-- ══ PAYMENT SUMMARY (all renters) ══════════════════════════════════ -->
+<div class="card fade-up d3" style="margin-bottom:1rem;border-color:rgba(232,160,32,.25);">
+  <div class="card-header" style="background:rgba(232,160,32,.06);">
     <span><i class="bi bi-wallet2" style="margin-right:6px;color:var(--gold);"></i>Payment Summary</span>
+    <span style="font-size:.72rem;color:var(--text-faint);font-weight:400;">
+      {% if summary.last_payment %}Last payment {{ summary.last_payment.strftime("%d %b %Y") }}{% else %}No payments recorded yet{% endif %}
+    </span>
   </div>
-  <div class="card-body" style="display:flex;gap:2rem;flex-wrap:wrap;padding:.75rem 1rem;">
-    <div style="text-align:center;">
-      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">TOTAL MONTHS</div>
-      <div style="font-size:1.4rem;font-weight:700;color:var(--text);">{{ records|length }}</div>
+  <div class="card-body" style="padding:1rem 1.25rem;">
+    <div class="summary-grid">
+      <div class="summary-cell">
+        <div class="summary-label">Total Billed</div>
+        <div class="summary-value" style="color:var(--text);">₹{{ "{:,.0f}".format(summary.total_billed) }}</div>
+        <div class="summary-sub">{{ summary.total_months }} month{{ 's' if summary.total_months != 1 }} tracked</div>
+      </div>
+      <div class="summary-cell">
+        <div class="summary-label">Total Collected</div>
+        <div class="summary-value" style="color:#4ade80;">₹{{ "{:,.0f}".format(summary.total_collected) }}</div>
+        <div class="summary-sub">{{ summary.months_paid }} month{{ 's' if summary.months_paid != 1 }} paid</div>
+      </div>
+      <div class="summary-cell">
+        <div class="summary-label">Outstanding</div>
+        <div class="summary-value" style="color:{% if summary.outstanding > 0 %}#f87171{% else %}var(--text-faint){% endif %};">₹{{ "{:,.0f}".format(summary.outstanding) }}</div>
+        <div class="summary-sub">
+          {{ summary.months_pending }} pending{% if summary.months_overdue %} · <span style="color:#f87171;">{{ summary.months_overdue }} overdue</span>{% endif %}
+        </div>
+      </div>
+      <div class="summary-cell">
+        <div class="summary-label">Collection Rate</div>
+        <div class="summary-value" style="color:{% if summary.collection_rate >= 90 %}#4ade80{% elif summary.collection_rate >= 70 %}#fbbf24{% else %}#f87171{% endif %};">{{ summary.collection_rate }}%</div>
+        <div class="summary-bar"><span style="width:{{ summary.collection_rate }}%;background:{% if summary.collection_rate >= 90 %}#4ade80{% elif summary.collection_rate >= 70 %}#fbbf24{% else %}#f87171{% endif %};"></span></div>
+      </div>
+      <div class="summary-cell">
+        <div class="summary-label">Avg Monthly Rent</div>
+        <div class="summary-value" style="color:var(--gold);">₹{{ "{:,.0f}".format(summary.avg_rent) }}</div>
+        <div class="summary-sub">across billed months</div>
+      </div>
+      <div class="summary-cell">
+        <div class="summary-label">Deposit Collected</div>
+        <div class="summary-value" style="color:#60a5fa;">₹{{ "{:,.0f}".format(tenant.deposit_paid()) }}</div>
+        <div class="summary-sub">
+          {% if tenant.deposit_balance() > 0 %}<span style="color:#fbbf24;">₹{{ "{:,.0f}".format(tenant.deposit_balance()) }} still due</span>
+          {% elif tenant.deposit %}fully collected{% else %}no deposit set{% endif %}
+        </div>
+      </div>
     </div>
-    <div style="text-align:center;">
-      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">MONTHS PAID</div>
-      <div style="font-size:1.4rem;font-weight:700;color:#4ade80;">{{ _s.paid_cnt }}</div>
-    </div>
-    {% if _s.partial_cnt %}
-    <div style="text-align:center;">
-      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">PARTIAL</div>
-      <div style="font-size:1.4rem;font-weight:700;color:#c084fc;">{{ _s.partial_cnt }}</div>
-    </div>
+  </div>
+</div>
+
+<!-- ══ SECURITY DEPOSIT — INSTALMENTS ═════════════════════════════════ -->
+{% if tenant.occupancy_status != 'Vacated' %}
+{% set agreed = tenant.deposit or 0 %}
+{% set dpaid = tenant.deposit_paid() %}
+{% set dbal = tenant.deposit_balance() %}
+{% set dpct = tenant.deposit_percent() %}
+<div class="card fade-up d3" style="margin-bottom:1rem;border-color:rgba(59,130,246,.22);">
+  <div class="card-header" style="background:rgba(59,130,246,.06);">
+    <span><i class="bi bi-safe" style="margin-right:6px;color:#60a5fa;"></i>Security Deposit</span>
+    {% if agreed > 0 %}
+      {% if dbal <= 0 %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Fully Collected</span>
+      {% elif dpaid > 0 %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Part Paid — ₹{{ "{:,.0f}".format(dbal) }} due</span>
+      {% else %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Not Collected</span>{% endif %}
     {% endif %}
-    <div style="text-align:center;">
-      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">PENDING</div>
-      <div style="font-size:1.4rem;font-weight:700;color:#fbbf24;">{{ _s.pending_cnt }}</div>
-    </div>
-    <div style="border-left:1px solid var(--border);padding-left:2rem;text-align:center;">
-      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">TOTAL BILLED</div>
-      <div style="font-size:1.4rem;font-weight:700;color:var(--text);">₹{{ "{:,.0f}".format(_s.total_billed) }}</div>
-    </div>
-    <div style="text-align:center;">
-      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">TOTAL COLLECTED</div>
-      <div style="font-size:1.4rem;font-weight:700;color:#4ade80;">₹{{ "{:,.0f}".format(_s.total_collected) }}</div>
-    </div>
-    {% if _s.total_billed > _s.total_collected %}
-    <div style="text-align:center;">
-      <div style="font-size:.72rem;color:var(--text-faint);font-weight:600;letter-spacing:.05em;margin-bottom:.2rem;">OUTSTANDING</div>
-      <div style="font-size:1.4rem;font-weight:700;color:#f87171;">₹{{ "{:,.0f}".format(_s.total_billed - _s.total_collected) }}</div>
-    </div>
+  </div>
+  <div class="card-body">
+    {% if agreed <= 0 %}
+      <div style="font-size:.85rem;color:var(--text-faint);">
+        No deposit amount is set for this renter.
+        <a href="{{ url_for('update_rent_amount', tid=tenant.id) }}" style="color:var(--gold);">Set the agreed deposit</a> first,
+        then record the instalments here.
+      </div>
+    {% else %}
+      <!-- Progress -->
+      <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.9rem;">
+        <div>
+          <div class="summary-label">Agreed</div>
+          <div style="font-size:1.25rem;font-weight:700;color:var(--text);">₹{{ "{:,.0f}".format(agreed) }}</div>
+        </div>
+        <div>
+          <div class="summary-label">Collected</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#4ade80;">₹{{ "{:,.0f}".format(dpaid) }}</div>
+        </div>
+        <div>
+          <div class="summary-label">Balance</div>
+          <div style="font-size:1.25rem;font-weight:700;color:{% if dbal > 0 %}#fbbf24{% else %}var(--text-faint){% endif %};">₹{{ "{:,.0f}".format(dbal) }}</div>
+        </div>
+        <div style="flex:1;min-width:180px;">
+          <div class="summary-label" style="display:flex;justify-content:space-between;">
+            <span>Progress</span><span style="color:#60a5fa;">{{ dpct }}%</span>
+          </div>
+          <div class="summary-bar" style="height:9px;">
+            <span style="width:{{ dpct }}%;background:linear-gradient(90deg,#3b82f6,#60a5fa);"></span>
+          </div>
+        </div>
+        <button class="btn btn-gold btn-sm" onclick="document.getElementById('depositModal').classList.add('open')">
+          <i class="bi bi-plus-lg"></i> Add Deposit Payment
+        </button>
+      </div>
+
+      <!-- Instalments -->
+      {% if deposit_payments %}
+      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:10px;">
+        <table>
+          <thead><tr><th>#</th><th>Date</th><th style="text-align:right;">Amount</th><th>Method</th><th>Reference</th><th>Notes</th><th style="text-align:center;">Remove</th></tr></thead>
+          <tbody>
+            {% for p in deposit_payments %}
+            <tr>
+              <td style="color:var(--text-faint);">{{ loop.index }}</td>
+              <td style="color:var(--text-dim);font-size:.8rem;">{{ p.payment_date.strftime("%d %b %Y") if p.payment_date else "—" }}</td>
+              <td style="text-align:right;font-weight:600;color:#4ade80;">₹{{ "{:,.0f}".format(p.amount or 0) }}</td>
+              <td style="font-size:.8rem;color:var(--text-dim);">
+                {% if p.method == 'cash' %}<i class="bi bi-cash-stack" style="color:#4ade80;"></i> Cash
+                {% elif p.method in ['upi','upi_screenshot'] %}<i class="bi bi-phone" style="color:#60a5fa;"></i> UPI
+                {% elif p.method %}<i class="bi bi-bank"></i> {{ p.method|replace('_',' ')|title }}
+                {% else %}—{% endif %}
+              </td>
+              <td style="font-family:monospace;font-size:.72rem;color:var(--text-faint);">{{ p.transaction_id or "—" }}</td>
+              <td style="font-size:.78rem;color:var(--text-faint);">{{ p.notes or "—" }}</td>
+              <td style="text-align:center;">
+                <form method="POST" action="{{ url_for('delete_deposit_payment', pid=p.id) }}" onsubmit="return confirm('Remove this deposit instalment?')">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-danger btn-sm" title="Remove"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div style="font-size:.83rem;color:var(--text-faint);padding:.5rem 0;">
+        No deposit instalments recorded yet. Use <strong style="color:var(--text-dim);">Add Deposit Payment</strong> to record the first half.
+      </div>
+      {% endif %}
     {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ══ RENT REVISIONS — shows the OLD rent before each increase ══════════ -->
+{% if rent_revisions %}
+<div class="card fade-up d3" style="margin-bottom:1rem;border-color:rgba(232,160,32,.2);">
+  <div class="card-header" style="background:rgba(232,160,32,.05);">
+    <span><i class="bi bi-graph-up" style="margin-right:6px;color:var(--gold);"></i>Rent Revisions</span>
+    <span style="font-size:.72rem;color:var(--text-faint);font-weight:400;">
+      Rent history below keeps the amount that applied at the time — increases only apply from the effective month onward.
+    </span>
+  </div>
+  <div class="card-body" style="padding:.6rem 1.25rem;">
+    <div style="display:flex;flex-direction:column;gap:0;">
+      {% for rv in rent_revisions %}
+      <div style="display:flex;align-items:center;gap:1rem;padding:.55rem 0;{% if not loop.last %}border-bottom:1px solid rgba(255,255,255,.05);{% endif %}flex-wrap:wrap;">
+        <div style="min-width:150px;font-size:.78rem;color:var(--text-faint);">
+          <i class="bi bi-calendar-event" style="margin-right:4px;"></i>Effective {{ rv.effective_from.strftime("%b %Y") }}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:.9rem;">
+          <span style="color:var(--text-faint);text-decoration:line-through;">₹{{ "{:,.0f}".format(rv.old_amount or 0) }}</span>
+          <i class="bi bi-arrow-right" style="color:var(--text-faint);font-size:.75rem;"></i>
+          <span style="color:{% if rv.new_amount > rv.old_amount %}#4ade80{% else %}#f87171{% endif %};font-weight:700;">₹{{ "{:,.0f}".format(rv.new_amount or 0) }}</span>
+          <span style="font-size:.72rem;color:{% if rv.new_amount > rv.old_amount %}#4ade80{% else %}#f87171{% endif %};background:{% if rv.new_amount > rv.old_amount %}rgba(34,197,94,.1){% else %}rgba(239,68,68,.1){% endif %};padding:1px 7px;border-radius:6px;">
+            {% if rv.new_amount > rv.old_amount %}+{% else %}−{% endif %}₹{{ "{:,.0f}".format((rv.new_amount - rv.old_amount)|abs) }}
+          </span>
+        </div>
+        {% if rv.old_deposit != rv.new_deposit %}
+        <div style="font-size:.74rem;color:var(--text-faint);">
+          Deposit: ₹{{ "{:,.0f}".format(rv.old_deposit or 0) }} → ₹{{ "{:,.0f}".format(rv.new_deposit or 0) }}
+        </div>
+        {% endif %}
+        {% if rv.notes %}<div style="font-size:.74rem;color:var(--text-faint);font-style:italic;">{{ rv.notes }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
   </div>
 </div>
 {% endif %}
@@ -268,11 +412,14 @@
       <thead><tr><th>Month</th><th style="text-align:right;">Rent</th><th style="text-align:right;">Paid</th><th>Status</th><th>Paid On</th><th>Method</th><th>Txn ID</th><th style="text-align:center;">Receipt</th><th style="text-align:center;">Edit</th></tr></thead>
       <tbody>
         {% for r in records %}
-        <tr>
-          <td style="font-weight:500;color:var(--text);">{{ r.month_label() }}</td>
+        <tr {% if r.is_overdue(today) %}class="row-overdue"{% endif %}>
+          <td style="font-weight:500;color:var(--text);">
+            {{ r.cycle_label() }}
+            <div class="cycle-note">{{ r.billed_in_label() }} · due {{ r.due_date_obj().strftime("%d %b") }}</div>
+          </td>
           <td style="text-align:right;color:var(--text-dim);">₹{{ "{:,.0f}".format(r.rent_amount) }}</td>
           <td style="text-align:right;color:{% if r.paid_amount %}#4ade80{% else %}var(--text-faint){% endif %};">{% if r.paid_amount %}₹{{ "{:,.0f}".format(r.paid_amount) }}{% else %}—{% endif %}</td>
-          <td>{% if r.status == 'Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>{% elif r.is_new_join_month() %}<span class="badge" style="background:var(--blue-bg);color:#60a5fa;border:1px solid rgba(59,130,246,.2);"><span class="b-dot" style="background:#60a5fa"></span>New Join</span>{% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}</td>
+          <td>{% if r.status == 'Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>{% elif r.is_overdue(today) %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Overdue</span>{% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}</td>
           <td style="font-size:.8rem;color:var(--text-faint);">{{ r.payment_date.strftime("%d %b %Y") if r.payment_date else "—" }}</td>
           <td style="font-size:.8rem;color:var(--text-dim);">{% if r.status != 'Paid' %}—{% elif r.payment_method == 'cash' %}<i class="bi bi-cash-stack" style="color:#4ade80;"></i> Cash{% elif r.payment_method in ['upi_screenshot','upi'] %}<i class="bi bi-phone" style="color:#60a5fa;"></i> UPI{% elif r.payment_method %}<i class="bi bi-pencil"></i> {{ r.payment_method }}{% else %}—{% endif %}</td>
           <td style="font-family:monospace;font-size:.7rem;color:var(--text-faint);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.transaction_id or '' }}">{% if r.status == 'Paid' %}{{ r.transaction_id or "—" }}{% else %}—{% endif %}</td>
@@ -288,10 +435,10 @@
         {% if r.status == 'Paid' and r.payment_screenshot %}
         <tr id="ss_{{ r.id }}" style="display:none;">
           <td colspan="9" style="text-align:center;background:var(--surface2);padding:1rem 1.5rem;border-top:1px solid var(--border);">
-            <img src="{{ file_url(r.payment_screenshot) }}"
+            <img src="{{ file_url(r.payment_screenshot) }}" data-url="{{ file_url(r.payment_screenshot) }}"
                  alt="Payment screenshot"
                  style="max-height:300px;max-width:100%;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;"
-                 onclick="window.open('{{ file_url(r.payment_screenshot) }}','_blank')"
+                 onclick="window.open(this.dataset.url,'_blank','noopener')"
                  title="Click to open full size">
             {% if r.transaction_id %}
             <div style="margin-top:.5rem;font-size:.75rem;color:var(--text-faint);font-family:monospace;">
@@ -316,12 +463,12 @@
     <div class="table-title"><i class="bi bi-clock-history" style="margin-right:6px;color:var(--text-faint);"></i>Reminder & Payment History</div>
     <div style="display:flex;gap:6px;">
       <form method="POST" action="{{ url_for('remind_tenant', tid=tenant.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="channel" value="whatsapp">
         <button class="btn btn-ghost btn-sm" style="color:#4ade80;border-color:rgba(34,197,94,.25);"><i class="bi bi-whatsapp"></i> WhatsApp</button>
       </form>
       <form method="POST" action="{{ url_for('remind_tenant', tid=tenant.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="channel" value="sms">
         <button class="btn btn-ghost btn-sm" style="color:#60a5fa;border-color:rgba(59,130,246,.25);"><i class="bi bi-chat-dots"></i> SMS</button>
       </form>
@@ -351,6 +498,70 @@
   </div>
 </div>
 
+<!-- Deposit Instalment Modal -->
+<div class="modal-overlay" id="depositModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+      <div style="font-weight:600;color:var(--text);">Record Deposit Payment</div>
+      <button onclick="document.getElementById('depositModal').classList.remove('open')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.2rem;"><i class="bi bi-x-lg"></i></button>
+    </div>
+    {% set agreed = tenant.deposit or 0 %}
+    {% set dbal = tenant.deposit_balance() %}
+    <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:.7rem .9rem;margin-bottom:1rem;display:flex;gap:1.25rem;flex-wrap:wrap;font-size:.8rem;">
+      <div><span style="color:var(--text-faint);">Agreed</span> <strong style="color:var(--text);">₹{{ "{:,.0f}".format(agreed) }}</strong></div>
+      <div><span style="color:var(--text-faint);">Collected</span> <strong style="color:#4ade80;">₹{{ "{:,.0f}".format(tenant.deposit_paid()) }}</strong></div>
+      <div><span style="color:var(--text-faint);">Balance</span> <strong style="color:#fbbf24;">₹{{ "{:,.0f}".format(dbal) }}</strong></div>
+    </div>
+    <form method="POST" action="{{ url_for('add_deposit_payment', tid=tenant.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="amount_mode" id="amountMode" value="custom">
+      <div class="form-group" style="margin-bottom:.9rem;">
+        <label>Quick amount</label>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+          <span class="amt-chip" onclick="pickAmt(this,'half',{{ (agreed / 2)|round(2) }})">Half — ₹{{ "{:,.0f}".format(agreed / 2) }}</span>
+          <span class="amt-chip" onclick="pickAmt(this,'balance',{{ dbal|round(2) }})">Balance — ₹{{ "{:,.0f}".format(dbal) }}</span>
+          <span class="amt-chip on" onclick="pickAmt(this,'custom',null)">Custom</span>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:.9rem;">
+        <label>Amount Received (₹) <span style="color:var(--red)">*</span></label>
+        <input class="form-control" name="amount" id="depAmount" type="number" step="0.01" min="0"
+               value="{{ '%.2f'|format(dbal) }}" required>
+        <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">
+          Pay in parts — e.g. half now and the rest later. The deposit shows as collected once the instalments reach ₹{{ "{:,.0f}".format(agreed) }}.
+        </div>
+      </div>
+      <div class="form-grid form-grid-2" style="margin-bottom:.9rem;">
+        <div class="form-group">
+          <label>Date Received</label>
+          <input class="form-control" name="payment_date" type="date" value="{{ today.strftime('%Y-%m-%d') }}">
+        </div>
+        <div class="form-group">
+          <label>Method</label>
+          <select class="form-control" name="method">
+            <option value="cash">Cash</option>
+            <option value="upi">UPI</option>
+            <option value="bank_transfer">Bank Transfer</option>
+            <option value="cheque">Cheque</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:.9rem;">
+        <label>Transaction ID / Reference</label>
+        <input class="form-control" name="transaction_id" placeholder="UPI ref / UTR / receipt no.">
+      </div>
+      <div class="form-group" style="margin-bottom:1.1rem;">
+        <label>Notes</label>
+        <input class="form-control" name="notes" placeholder="e.g. First half at key handover">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button type="submit" class="btn btn-gold"><i class="bi bi-check-lg"></i> Record Payment</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('depositModal').classList.remove('open')">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Edit Payment Modal -->
 <div class="modal-overlay" id="editPaymentModal" onclick="if(event.target===this)this.classList.remove('open')">
   <div class="modal-box">
@@ -359,7 +570,7 @@
       <button onclick="document.getElementById('editPaymentModal').classList.remove('open')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.2rem;"><i class="bi bi-x-lg"></i></button>
     </div>
     <form method="POST" action="{{ url_for('force_mark_paid', tid=tenant.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group" style="margin-bottom:1rem;">
         <label>Payment Method</label>
         <select class="form-control" name="method">
@@ -385,6 +596,14 @@
 </div>
 
 <script>
+function pickAmt(el, mode, value) {
+  document.querySelectorAll('#depositModal .amt-chip').forEach(c => c.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('amountMode').value = mode;
+  const input = document.getElementById('depAmount');
+  if (value !== null) { input.value = Number(value).toFixed(2); input.readOnly = true; }
+  else { input.readOnly = false; input.focus(); }
+}
 function toggleScreenshot(id) {
   const el = document.getElementById(id);
   if (el) el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'table-row' : 'none';

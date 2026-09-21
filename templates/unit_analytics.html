@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+{% block title %}Unit Analytics — RentManager{% endblock %}
+{% block page_title %}Unit Analytics{% endblock %}
+{% block extra_styles %}
+.unit-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:1rem; margin-bottom:1.5rem; }
+.unit-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
+  padding:1.1rem 1.25rem; transition:border-color .2s, transform .2s; }
+.unit-card:hover { border-color:var(--border2); transform:translateY(-2px); }
+.unit-card.vacant { border-style:dashed; opacity:.9; }
+.unit-head { display:flex; align-items:center; justify-content:space-between; gap:.5rem; margin-bottom:.85rem; }
+.unit-name { font-size:1.05rem; font-weight:700; color:var(--text); }
+.unit-sub { font-size:.72rem; color:var(--text-faint); margin-top:1px; }
+.unit-row { display:flex; justify-content:space-between; align-items:baseline; font-size:.82rem; padding:.22rem 0; }
+.unit-row span:first-child { color:var(--text-faint); }
+.mini-bar { height:6px; background:var(--surface2); border-radius:4px; overflow:hidden; margin-top:.55rem; }
+.mini-bar span { display:block; height:100%; border-radius:4px; }
+.chart-box { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:1.1rem 1.25rem; }
+.chart-title { font-size:.85rem; font-weight:500; color:var(--text); margin-bottom:.9rem; }
+.chart-grid { display:grid; grid-template-columns:2fr 1fr; gap:1rem; margin-bottom:1.5rem; }
+@media (max-width:900px){ .chart-grid { grid-template-columns:1fr; } }
+.num { font-variant-numeric:tabular-nums; }
+{% endblock %}
+{% block content %}
+
+<!-- Filter -->
+<div class="fade-up d1" style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1.1rem;">
+  <form method="GET" style="display:flex;gap:.5rem;align-items:center;">
+    <label style="font-size:.78rem;color:var(--text-dim);">Period</label>
+    <select name="year" class="form-control" style="width:auto;" onchange="this.form.submit()">
+      <option value="0" {% if not sel_year %}selected{% endif %}>All time</option>
+      {% for y in years %}
+      <option value="{{ y }}" {% if sel_year == y %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  <span style="font-size:.76rem;color:var(--text-faint);">
+    Per-unit performance across current and past renters.
+  </span>
+</div>
+
+<!-- Portfolio totals -->
+<div class="stat-grid fade-up d1">
+  <div class="stat-card c-blue">
+    <i class="bi bi-buildings stat-icon" style="color:var(--blue)"></i>
+    <div class="stat-label">Units</div>
+    <div class="stat-value num" style="color:#60a5fa">{{ totals.units }}</div>
+    <div class="stat-sub">{{ totals.occupied }} occupied · {{ totals.vacant }} vacant</div>
+  </div>
+  <div class="stat-card c-green">
+    <i class="bi bi-cash-coin stat-icon" style="color:var(--green)"></i>
+    <div class="stat-label">Collected</div>
+    <div class="stat-value num" style="color:#4ade80">₹{{ "{:,.0f}".format(totals.collected) }}</div>
+    <div class="stat-sub">of ₹{{ "{:,.0f}".format(totals.billed) }} billed</div>
+  </div>
+  <div class="stat-card c-red">
+    <i class="bi bi-exclamation-triangle stat-icon" style="color:var(--red)"></i>
+    <div class="stat-label">Outstanding</div>
+    <div class="stat-value num" style="color:{% if totals.outstanding > 0 %}#f87171{% else %}var(--text-faint){% endif %}">₹{{ "{:,.0f}".format(totals.outstanding) }}</div>
+    <div class="stat-sub">
+      {% if totals.deposit_balance > 0 %}+ ₹{{ "{:,.0f}".format(totals.deposit_balance) }} deposit uncollected{% else %}deposits fully collected{% endif %}
+    </div>
+  </div>
+  <div class="stat-card c-gold">
+    <i class="bi bi-percent stat-icon" style="color:var(--gold)"></i>
+    <div class="stat-label">Occupancy / Collection</div>
+    <div class="stat-value num" style="color:var(--gold)">{{ totals.occupancy_rate }}% / {{ totals.collection_rate }}%</div>
+    <div class="stat-sub">
+      {% if totals.repair_profit %}Repair margin ₹{{ "{:,.0f}".format(totals.repair_profit) }}{% else %}No repair margin recorded{% endif %}
+    </div>
+  </div>
+</div>
+
+{% if units %}
+<!-- Charts -->
+<div class="chart-grid fade-up d2">
+  <div class="chart-box">
+    <div class="chart-title"><i class="bi bi-bar-chart-line" style="margin-right:6px;color:var(--gold);"></i>Collected vs Outstanding by Unit</div>
+    <div style="height:280px;"><canvas id="unitBarChart"></canvas></div>
+  </div>
+  <div class="chart-box">
+    <div class="chart-title"><i class="bi bi-pie-chart" style="margin-right:6px;color:var(--blue);"></i>Occupancy</div>
+    <div style="height:280px;"><canvas id="occChart"></canvas></div>
+  </div>
+</div>
+
+<!-- Unit cards -->
+<div class="unit-grid fade-up d3">
+  {% for u in units %}
+  {% set colors = ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
+  {% set color = colors[loop.index0 % 7] %}
+  <div class="unit-card {% if not u.occupied %}vacant{% endif %}">
+    <div class="unit-head">
+      <div>
+        <div class="unit-name" style="color:{{ color }};">
+          {{ u.unit }}{% if u.unit_numbers %} <span style="color:var(--text-faint);font-size:.8rem;font-weight:500;">#{{ u.unit_numbers }}</span>{% endif %}
+        </div>
+        <div class="unit-sub">
+          {% if u.current_tenant %}
+            <a href="{{ url_for('renter_detail', tid=u.current_tenant.id) }}" style="color:var(--text-dim);text-decoration:none;">
+              <i class="bi bi-person" style="margin-right:3px;"></i>{{ u.current_tenant.name }}
+            </a>
+          {% else %}<i class="bi bi-door-open" style="margin-right:3px;"></i>Vacant{% endif %}
+          {% if u.past_tenants %} · {{ u.past_tenants|length }} past{% endif %}
+        </div>
+      </div>
+      {% if u.occupied %}
+        <span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Occupied</span>
+      {% else %}
+        <span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Vacant</span>
+      {% endif %}
+    </div>
+
+    <div class="unit-row">
+      <span>Current rent</span>
+      <span class="num" style="color:var(--gold);font-weight:600;">{% if u.current_rent %}₹{{ "{:,.0f}".format(u.current_rent) }}/mo{% else %}—{% endif %}</span>
+    </div>
+    <div class="unit-row">
+      <span>Collected</span>
+      <span class="num" style="color:#4ade80;font-weight:600;">₹{{ "{:,.0f}".format(u.collected) }}</span>
+    </div>
+    <div class="unit-row">
+      <span>Outstanding</span>
+      <span class="num" style="color:{% if u.outstanding > 0 %}#f87171{% else %}var(--text-faint){% endif %};font-weight:600;">₹{{ "{:,.0f}".format(u.outstanding) }}</span>
+    </div>
+    <div class="unit-row">
+      <span>Months paid</span>
+      <span class="num" style="color:var(--text-dim);">{{ u.months_paid }} / {{ u.months_tracked }}{% if u.months_overdue %} <span style="color:#f87171;">· {{ u.months_overdue }} overdue</span>{% endif %}</span>
+    </div>
+    <div class="unit-row">
+      <span>Deposit collected</span>
+      <span class="num" style="color:#60a5fa;">₹{{ "{:,.0f}".format(u.deposit_collected) }}{% if u.deposit_balance > 0 %} <span style="color:#fbbf24;font-size:.75rem;">(₹{{ "{:,.0f}".format(u.deposit_balance) }} due)</span>{% endif %}</span>
+    </div>
+    {% if u.repair_profit or u.rent_recovered %}
+    <div class="unit-row">
+      <span>Deposit margin</span>
+      <span class="num" style="color:{% if u.repair_profit > 0 %}#4ade80{% elif u.repair_profit < 0 %}#f87171{% else %}var(--text-faint){% endif %};font-weight:600;">
+        {% if u.repair_profit >= 0 %}+{% else %}−{% endif %}₹{{ "{:,.0f}".format(u.repair_profit|abs) }}
+      </span>
+    </div>
+    {% endif %}
+    <div class="unit-row">
+      <span>Last payment</span>
+      <span style="color:var(--text-dim);font-size:.78rem;">{{ u.last_payment.strftime("%d %b %Y") if u.last_payment else "—" }}</span>
+    </div>
+
+    <div class="mini-bar">
+      <span style="width:{{ u.collection_rate }}%;background:{% if u.collection_rate >= 90 %}#22c55e{% elif u.collection_rate >= 70 %}#f59e0b{% else %}#ef4444{% endif %};"></span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--text-faint);margin-top:.3rem;">
+      <span>Collection rate</span><span>{{ u.collection_rate }}%</span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Comparison table -->
+<div class="data-table-wrap fade-up d4">
+  <div class="table-controls">
+    <div class="table-title"><i class="bi bi-table" style="margin-right:6px;color:var(--gold);"></i>Unit Comparison</div>
+    <span style="font-size:.74rem;color:var(--text-faint);">{% if sel_year %}Year {{ sel_year }}{% else %}All time{% endif %}</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Unit</th><th>Occupant</th><th>Status</th>
+          <th style="text-align:right;">Rent</th>
+          <th style="text-align:right;">Billed</th>
+          <th style="text-align:right;">Collected</th>
+          <th style="text-align:right;">Outstanding</th>
+          <th style="text-align:right;">Deposit</th>
+          <th style="text-align:right;">Repair Margin</th>
+          <th style="text-align:right;">Rate</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in units %}
+        <tr {% if u.months_overdue %}class="row-overdue"{% endif %}>
+          <td style="font-weight:600;color:var(--text);">{{ u.unit }}{% if u.unit_numbers %} <span style="color:var(--text-faint);font-weight:400;">#{{ u.unit_numbers }}</span>{% endif %}</td>
+          <td>
+            {% if u.current_tenant %}
+            <a href="{{ url_for('renter_detail', tid=u.current_tenant.id) }}" style="color:var(--text-dim);">{{ u.current_tenant.name }}</a>
+            {% else %}<span style="color:var(--text-faint);">—</span>{% endif %}
+          </td>
+          <td>{% if u.occupied %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Occupied</span>{% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Vacant</span>{% endif %}</td>
+          <td class="num" style="text-align:right;color:var(--gold);">{% if u.current_rent %}₹{{ "{:,.0f}".format(u.current_rent) }}{% else %}—{% endif %}</td>
+          <td class="num" style="text-align:right;color:var(--text-dim);">₹{{ "{:,.0f}".format(u.billed) }}</td>
+          <td class="num" style="text-align:right;color:#4ade80;font-weight:600;">₹{{ "{:,.0f}".format(u.collected) }}</td>
+          <td class="num" style="text-align:right;color:{% if u.outstanding > 0 %}#f87171{% else %}var(--text-faint){% endif %};">₹{{ "{:,.0f}".format(u.outstanding) }}</td>
+          <td class="num" style="text-align:right;color:#60a5fa;">₹{{ "{:,.0f}".format(u.deposit_collected) }}</td>
+          <td class="num" style="text-align:right;color:{% if u.repair_profit > 0 %}#4ade80{% elif u.repair_profit < 0 %}#f87171{% else %}var(--text-faint){% endif %};">
+            {% if u.repair_profit %}{% if u.repair_profit >= 0 %}+{% else %}−{% endif %}₹{{ "{:,.0f}".format(u.repair_profit|abs) }}{% else %}—{% endif %}
+          </td>
+          <td class="num" style="text-align:right;font-weight:600;color:{% if u.collection_rate >= 90 %}#4ade80{% elif u.collection_rate >= 70 %}#fbbf24{% else %}#f87171{% endif %};">{{ u.collection_rate }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr style="background:var(--surface2);">
+          <td colspan="4" style="font-weight:600;color:var(--text);">Total — {{ totals.units }} unit{{ 's' if totals.units != 1 }}</td>
+          <td class="num" style="text-align:right;font-weight:600;color:var(--text);">₹{{ "{:,.0f}".format(totals.billed) }}</td>
+          <td class="num" style="text-align:right;font-weight:700;color:#4ade80;">₹{{ "{:,.0f}".format(totals.collected) }}</td>
+          <td class="num" style="text-align:right;font-weight:600;color:#f87171;">₹{{ "{:,.0f}".format(totals.outstanding) }}</td>
+          <td></td>
+          <td class="num" style="text-align:right;font-weight:600;color:#4ade80;">{% if totals.repair_profit %}+₹{{ "{:,.0f}".format(totals.repair_profit) }}{% else %}—{% endif %}</td>
+          <td class="num" style="text-align:right;font-weight:700;color:var(--gold);">{{ totals.collection_rate }}%</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card fade-up d2">
+  <div class="card-body" style="text-align:center;padding:3rem;color:var(--text-faint);">
+    <i class="bi bi-buildings" style="font-size:2rem;display:block;margin-bottom:.75rem;opacity:.4;"></i>
+    No unit data yet. Add renters with a unit assigned and it will show up here.
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const UNIT_DATA = {{ chart_data|tojson }};
+
+function drawUnitCharts() {
+  if (typeof Chart === 'undefined' || !UNIT_DATA.labels.length) return;
+  Chart.defaults.color = '#8b93a8';
+  Chart.defaults.font.family = "'DM Sans', sans-serif";
+  const money = v => '₹' + Number(v).toLocaleString('en-IN');
+
+  new Chart(document.getElementById('unitBarChart'), {
+    type: 'bar',
+    data: {
+      labels: UNIT_DATA.labels,
+      datasets: [
+        { label: 'Collected',   data: UNIT_DATA.collected,   backgroundColor: 'rgba(34,197,94,.75)',  borderRadius: 5 },
+        { label: 'Outstanding', data: UNIT_DATA.outstanding, backgroundColor: 'rgba(239,68,68,.65)',  borderRadius: 5 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: c => c.dataset.label + ': ' + money(c.parsed.y) } }
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: { stacked: true, grid: { color: 'rgba(255,255,255,.05)' },
+             ticks: { font: { size: 10 }, callback: v => '₹' + (v >= 1000 ? (v/1000) + 'k' : v) } }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('occChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Occupied', 'Vacant'],
+      datasets: [{
+        data: UNIT_DATA.occupancy,
+        backgroundColor: ['rgba(34,197,94,.8)', 'rgba(245,158,11,.7)'],
+        borderColor: '#161b27', borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '62%',
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+    }
+  });
+}
+
+if (typeof Chart !== 'undefined') drawUnitCharts();
+else window.addEventListener('load', drawUnitCharts);
+</script>
+{% endblock %}

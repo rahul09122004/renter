@@ -24,7 +24,7 @@
 </div>
 <div class="renter-grid fade-up d2">
   {% for t in active_list %}
-  {% set colors = ['#C68A3D','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
+  {% set colors = ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
   {% set color = colors[loop.index0 % colors|length] %}
   <div class="renter-card">
     <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:.9rem;">
@@ -82,7 +82,7 @@
       </a>
       <a href="{{ url_for('edit_renter', tid=t.id) }}" class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;"><i class="bi bi-pencil"></i> Edit</a>
       <form method="POST" action="{{ url_for('delete_renter', tid=t.id) }}" onsubmit="return confirm('Delete {{ t.name }}? All data will be lost.')">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button>
       </form>
     </div>
@@ -123,7 +123,7 @@
         <i class="bi bi-pencil"></i> Edit
       </a>
       <form method="POST" action="{{ url_for('delete_renter', tid=t.id) }}" onsubmit="return confirm('Permanently delete {{ t.name }}?')">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button>
       </form>
     </div>

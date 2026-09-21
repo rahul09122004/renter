@@ -13,9 +13,10 @@
 {% endblock %}
 {% block content %}
 
-{% set paid_count = paid_count or 0 %}
-{% set partial_count = partial_count or 0 %}
-{% set pending_count = pending_count or 0 %}
+{% set paid_list    = tenants|selectattr('status','equalto','Paid')|list %}
+{% set pending_list = tenants|selectattr('status','equalto','Pending')|list %}
+{% set total_rent   = tenants|sum(attribute='amount') %}
+{% set collected    = paid_list|sum(attribute='amount') %}
 
 <!-- KPIs -->
 <div class="stat-grid fade-up d1">
@@ -23,13 +24,13 @@
     <i class="bi bi-check-circle stat-icon" style="color:var(--green)"></i>
     <div class="stat-label">Collected</div>
     <div class="stat-value" style="color:#4ade80">₹{{ "{:,.0f}".format(collected) }}</div>
-    <div class="stat-sub">{{ paid_count }} paid{% if partial_count %} · {{ partial_count }} partial{% endif %}</div>
+    <div class="stat-sub">{{ paid_list|length }} tenants paid</div>
   </div>
   <div class="stat-card c-amber">
     <i class="bi bi-hourglass-split stat-icon" style="color:var(--amber)"></i>
     <div class="stat-label">Pending</div>
     <div class="stat-value" style="color:#fbbf24">₹{{ "{:,.0f}".format(total_rent - collected) }}</div>
-    <div class="stat-sub">{{ pending_count }} tenants pending</div>
+    <div class="stat-sub">{{ pending_list|length }} tenants pending</div>
   </div>
   <div class="stat-card c-gold">
     <i class="bi bi-houses stat-icon" style="color:var(--gold)"></i>
@@ -51,8 +52,7 @@
   <div class="table-controls">
     <div class="table-title">
       <i class="bi bi-table" style="margin-right:6px;color:var(--gold);"></i>
-      All Units — Current Billing Cycle
-      <span style="font-size:.72rem;color:var(--text-faint);margin-left:6px;font-weight:400;">(rent billed in arrears — each renter's card shows their last completed month, due now)</span>
+      All Units — {{ today.strftime("%B %Y") }}
       <span style="font-size:.72rem;color:var(--text-faint);margin-left:8px;">· Click any row for details</span>
     </div>
     <a href="{{ url_for('add_renter') }}" class="btn btn-gold btn-sm"><i class="bi bi-plus-lg"></i> Add Renter</a>
@@ -63,17 +63,16 @@
         <tr>
           <th>Unit</th><th>Renter</th><th>Phone</th>
           <th style="text-align:right;">Rent (₹)</th>
-          <th>Due Day</th><th>Status</th><th>Paid On</th>
+          <th>Due Date</th><th>Status</th><th>Paid On</th>
           <th style="text-align:center;">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for t in tenants %}
-        {% set colors = ['#C68A3D','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
+        {% set colors = ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'] %}
         {% set color = colors[loop.index0 % colors|length] %}
-        {% set rec = record_by_tenant.get(t.id) %}
-        <tr {% if rec and rec.is_overdue(today) %}class="row-overdue"{% endif %}
-            style="cursor:pointer;{% if t.occupancy_status == 'Vacated' %}opacity:.7;{% endif %}" onclick="openDrawer({{ t.id }})">
+        <tr {% if t.status=='Pending' and today > t.current_due_date() %}class="row-overdue"{% endif %}
+            style="cursor:pointer;" onclick="openDrawer({{ t.id }})">
           <td>
             <span class="unit-badge" style="background:{{ color }}18;color:{{ color }};border-color:{{ color }}35;">
               {{ t.unit or '—' }}{% if t.unit_number %} #{{ t.unit_number }}{% endif %}
@@ -83,19 +82,17 @@
             <div style="display:flex;align-items:center;gap:9px;">
               <div style="width:32px;height:32px;border-radius:50%;background:{{ color }}25;border:2px solid {{ color }}45;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;color:{{ color }};flex-shrink:0;">{{ t.name[0].upper() }}</div>
               <span style="font-weight:500;color:var(--text);">{{ t.name }}</span>
-              {% if t.occupancy_status == 'Vacated' %}<span style="background:var(--red-bg);color:#f87171;border:1px solid rgba(239,68,68,.2);padding:.1rem .5rem;border-radius:20px;font-size:.68rem;font-weight:500;">Vacated</span>{% endif %}
             </div>
           </td>
           <td style="color:var(--text-dim);font-size:.82rem;">{{ t.phone }}</td>
           <td style="font-weight:600;color:var(--text);text-align:right;">₹{{ "{:,.0f}".format(t.amount) }}</td>
-          <td style="color:var(--text-dim);">{{ t.get_due_day() }}th
-            {% if rec %}<div style="font-size:.68rem;color:var(--text-faint);margin-top:2px;">Bill: {{ rec.month_label() }}</div>{% endif %}
+          <td style="color:var(--text-dim);">
+            {{ t.current_due_date().strftime("%d %b %Y") }}
+            <div style="font-size:.68rem;color:var(--text-faint);margin-top:1px;">{{ t.get_due_day() }}th of the following month</div>
           </td>
           <td>
             {% if t.status=='Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
-            {% elif t.status=='Partial' %}<span class="badge" style="background:rgba(168,85,247,.12);color:#c084fc;border:1px solid rgba(168,85,247,.25);"><span class="b-dot" style="background:#c084fc"></span>Partial{% if rec %} — ₹{{ "{:,.0f}".format(rec.balance_due()) }} due{% endif %}</span>
-            {% elif rec and rec.is_new_join_month() %}<span class="badge" style="background:var(--blue-bg);color:#60a5fa;border:1px solid rgba(59,130,246,.2);"><span class="b-dot" style="background:#60a5fa"></span>New Join</span>
-            {% elif rec and rec.is_overdue(today) %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Overdue</span>
+            {% elif t.status=='Pending' and today > t.current_due_date() %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Overdue</span>
             {% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}
           </td>
           <td style="color:var(--text-faint);font-size:.82rem;">{{ t.payment_date.strftime("%d %b %Y") if t.payment_date else "—" }}</td>
@@ -104,13 +101,11 @@
               {% if t.status != 'Paid' %}
               <a href="{{ url_for('verify_payment', tid=t.id) }}" class="btn btn-success btn-sm" title="Mark Paid"><i class="bi bi-check-lg"></i></a>
               {% endif %}
-              {% if t.occupancy_status != 'Vacated' %}
               <form method="POST" action="{{ url_for('remind_tenant', tid=t.id) }}" style="display:inline;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="channel" value="whatsapp">
                 <button class="btn btn-ghost btn-sm" style="color:#4ade80;border-color:rgba(34,197,94,.25);" title="WhatsApp"><i class="bi bi-whatsapp"></i></button>
               </form>
-              {% endif %}
               <a href="{{ url_for('edit_renter', tid=t.id) }}" class="btn btn-ghost btn-sm" title="Edit"><i class="bi bi-pencil"></i></a>
             </div>
           </td>
@@ -153,32 +148,30 @@ const TENANTS = {
   unit: {{ (t.unit or '') | tojson }},
   unit_number: {{ (t.unit_number or '') | tojson }},
   amount: {{ t.amount }},
-  due_date: {{ (t.get_due_day()|string + 'th of every month') | tojson }},
+  due_date: {{ (t.current_due_date().strftime("%d %b %Y") + ' (' + t.get_due_day()|string + 'th of the following month)') | tojson }},
   status: {{ t.status | tojson }},
-  is_new_join: {{ 'true' if record_by_tenant.get(t.id) and record_by_tenant.get(t.id).is_new_join_month() else 'false' }},
-  balance_due: {{ record_by_tenant.get(t.id).balance_due() if record_by_tenant.get(t.id) else 0 }},
-  {% set _rec = record_by_tenant.get(t.id) %}
-  {% if _rec %}{% set _dm, _dy = _rec.due_month_year() %}
-  bill_month_label: {{ _rec.month_label() | tojson }},
-  due_month_label: {{ (["January","February","March","April","May","June","July","August","September","October","November","December"][_dm-1] ~ " " ~ _dy) | tojson }},
-  {% else %}
-  bill_month_label: "", due_month_label: "",
-  {% endif %}
   payment_date: {{ t.payment_date.strftime("%d %b %Y") | tojson if t.payment_date else 'null' }},
   payment_method: {{ (t.payment_method or '') | tojson }},
   transaction_id: {{ (t.transaction_id or '') | tojson }},
   payment_screenshot: {{ (t.payment_screenshot or '') | tojson }},
-  payment_screenshot_url: {{ (file_url(t.payment_screenshot) or '') | tojson }},
+  payment_screenshot_url: {{ file_url(t.payment_screenshot) | tojson }},
   deposit: {{ t.deposit or 0 }},
   join_date: {{ t.join_date.strftime("%d %b %Y") | tojson if t.join_date else 'null' }},
   notes: {{ (t.notes or '') | tojson }},
-  color: ['#C68A3D','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'][{{ loop.index0 % 7 }}],
+  color: ['#e8a020','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#06b6d4'][{{ loop.index0 % 7 }}],
 },
 {% endfor %}
 };
 
 const METHOD_ICONS  = {cash:'bi-cash-stack', upi_screenshot:'bi-phone', bank_transfer:'bi-building-fill'};
 const METHOD_LABELS = {cash:'Cash', upi_screenshot:'UPI / Screenshot', bank_transfer:'Bank Transfer'};
+
+// Every value that comes from the database is HTML-escaped before it touches innerHTML.
+function esc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
 
 function openDrawer(id) {
   const t = TENANTS[id];
@@ -196,12 +189,12 @@ function openDrawer(id) {
 
     <!-- Profile header -->
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:1.1rem;padding-bottom:1.1rem;border-bottom:1px solid var(--border);">
-      <div style="width:52px;height:52px;border-radius:50%;background:${sc}20;border:3px solid ${sc}50;display:flex;align-items:center;justify-content:center;font-size:1.25rem;font-weight:700;color:${sc};flex-shrink:0;">${t.name[0].toUpperCase()}</div>
+      <div style="width:52px;height:52px;border-radius:50%;background:${sc}20;border:3px solid ${sc}50;display:flex;align-items:center;justify-content:center;font-size:1.25rem;font-weight:700;color:${sc};flex-shrink:0;">${esc(t.name[0].toUpperCase())}</div>
       <div style="flex:1;">
-        <div style="font-size:.98rem;font-weight:700;color:var(--text);">${t.name}</div>
+        <div style="font-size:.98rem;font-weight:700;color:var(--text);">${esc(t.name)}</div>
         <div style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap;">
-          ${t.unit ? `<span style="background:${sc}18;color:${sc};border:1px solid ${sc}35;padding:.12rem .55rem;border-radius:20px;font-size:.7rem;font-weight:600;">${t.unit}${t.unit_number?' #'+t.unit_number:''}</span>` : ''}
-          <span style="background:${isPaid?'rgba(34,197,94,.12)':(t.is_new_join?'rgba(59,130,246,.12)':'rgba(245,158,11,.12)')};color:${isPaid?'#4ade80':(t.is_new_join?'#60a5fa':'#fbbf24')};border:1px solid ${isPaid?'rgba(34,197,94,.25)':(t.is_new_join?'rgba(59,130,246,.25)':'rgba(245,158,11,.25)')};padding:.12rem .55rem;border-radius:20px;font-size:.7rem;font-weight:600;">${isPaid?'✓ Paid':(t.is_new_join?'🆕 New Join':'⏳ Pending')}</span>
+          ${t.unit ? `<span style="background:${sc}18;color:${sc};border:1px solid ${sc}35;padding:.12rem .55rem;border-radius:20px;font-size:.7rem;font-weight:600;">${esc(t.unit)}${t.unit_number?' #'+esc(t.unit_number):''}</span>` : ''}
+          <span style="background:${isPaid?'rgba(34,197,94,.12)':'rgba(245,158,11,.12)'};color:${isPaid?'#4ade80':'#fbbf24'};border:1px solid ${isPaid?'rgba(34,197,94,.25)':'rgba(245,158,11,.25)'};padding:.12rem .55rem;border-radius:20px;font-size:.7rem;font-weight:600;">${isPaid?'✓ Paid':'⏳ Pending'}</span>
         </div>
       </div>
       <div style="text-align:right;">
@@ -219,16 +212,16 @@ function openDrawer(id) {
       </div>
       <div class="receipt-row">
         <span style="font-size:.8rem;color:var(--text-faint);">Paid On</span>
-        <span style="font-size:.8rem;color:var(--text);font-weight:500;">${t.payment_date || '—'}</span>
+        <span style="font-size:.8rem;color:var(--text);font-weight:500;">${esc(t.payment_date || '—')}</span>
       </div>
       <div class="receipt-row">
         <span style="font-size:.8rem;color:var(--text-faint);">Payment Method</span>
-        <span style="font-size:.8rem;color:var(--text);font-weight:500;"><i class="bi ${icon}" style="margin-right:4px;"></i>${method}</span>
+        <span style="font-size:.8rem;color:var(--text);font-weight:500;"><i class="bi ${icon}" style="margin-right:4px;"></i>${esc(method)}</span>
       </div>
       ${t.transaction_id && t.transaction_id !== 'Cash' ? `
       <div class="receipt-row">
         <span style="font-size:.8rem;color:var(--text-faint);">Transaction ID</span>
-        <span style="font-size:.74rem;color:var(--text);font-family:monospace;word-break:break-all;max-width:200px;text-align:right;">${t.transaction_id}</span>
+        <span style="font-size:.74rem;color:var(--text);font-family:monospace;word-break:break-all;max-width:200px;text-align:right;">${esc(t.transaction_id)}</span>
       </div>` : ''}
       <div class="receipt-row" style="border-top:1px solid rgba(34,197,94,.2);margin-top:.4rem;">
         <span style="font-size:.85rem;font-weight:600;color:var(--text);">Amount Paid</span>
@@ -241,15 +234,15 @@ function openDrawer(id) {
     <div style="border-radius:10px;overflow:hidden;margin-bottom:.75rem;border:1px solid var(--border2);">
       <div style="padding:.6rem 1rem;background:var(--surface2);display:flex;justify-content:space-between;align-items:center;">
         <span style="font-size:.75rem;font-weight:500;color:var(--text-dim);"><i class="bi bi-image" style="margin-right:5px;color:#60a5fa;"></i>Payment Screenshot</span>
-        <a href="${t.payment_screenshot_url}" target="_blank" style="font-size:.72rem;color:#60a5fa;text-decoration:none;"><i class="bi bi-box-arrow-up-right" style="margin-right:3px;"></i>Open Full</a>
+        <a href="${esc(t.payment_screenshot_url)}" target="_blank" rel="noopener noreferrer" style="font-size:.72rem;color:#60a5fa;text-decoration:none;"><i class="bi bi-box-arrow-up-right" style="margin-right:3px;"></i>Open Full</a>
       </div>
       <div style="background:#0a0a0a;text-align:center;padding:.75rem;">
-        <img src="${t.payment_screenshot_url}"
+        <img src="${esc(t.payment_screenshot_url)}" data-url="${esc(t.payment_screenshot_url)}"
              alt="Payment proof"
              style="max-height:220px;max-width:100%;border-radius:8px;cursor:zoom-in;transition:transform .2s;"
              onmouseover="this.style.transform='scale(1.02)'"
              onmouseout="this.style.transform='scale(1)'"
-             onclick="window.open('${t.payment_screenshot_url}','_blank')"
+             onclick="window.open(this.dataset.url,'_blank','noopener')"
              onerror="this.parentElement.innerHTML='<div style=\\'padding:1rem;color:var(--text-faint);font-size:.8rem;\\'>Screenshot not available</div>'">
       </div>
     </div>` : (t.payment_method==='upi_screenshot' ? `
@@ -263,8 +256,8 @@ function openDrawer(id) {
         <a href="/renters/detail/${t.id}" class="btn btn-ghost" style="justify-content:center;font-size:.8rem;"><i class="bi bi-eye"></i> Full Details</a>
         <button onclick="showEditPayment(${t.id})" class="btn btn-ghost" style="justify-content:center;font-size:.8rem;color:#60a5fa;border-color:rgba(59,130,246,.25);"><i class="bi bi-pencil-square"></i> Edit Payment</button>
       </div>
-      <form method="POST" action="/tenant/mark-unpaid/${t.id}" onsubmit="return confirm('Mark ${t.name} as unpaid? This will clear the payment record.')">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <form method="POST" action="/tenant/mark-unpaid/${t.id}" data-confirm="Mark ${esc(t.name)} as unpaid? This will clear the payment record.">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-danger" style="width:100%;justify-content:center;font-size:.8rem;"><i class="bi bi-x-circle"></i> Mark as Unpaid</button>
       </form>
     </div>
@@ -273,7 +266,7 @@ function openDrawer(id) {
     <div id="editPayForm_${t.id}" style="display:none;background:var(--surface2);border-radius:10px;padding:1rem;margin-bottom:.75rem;border:1px solid var(--border2);">
       <div style="font-size:.72rem;color:var(--gold);font-weight:600;margin-bottom:.85rem;text-transform:uppercase;letter-spacing:.06em;"><i class="bi bi-pencil-square" style="margin-right:5px;"></i>Edit Payment Details</div>
       <form method="POST" action="/tenant/force-paid/${t.id}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div style="margin-bottom:.7rem;">
           <label style="font-size:.74rem;color:var(--text-dim);display:block;margin-bottom:.28rem;">Method</label>
           <select name="method" class="form-control" style="font-size:.82rem;">
@@ -284,9 +277,9 @@ function openDrawer(id) {
         </div>
         <div style="margin-bottom:.85rem;">
           <label style="font-size:.74rem;color:var(--text-dim);display:block;margin-bottom:.28rem;">Transaction ID / Reference</label>
-          <input class="form-control" name="transaction_id" value="${t.transaction_id||''}" placeholder="UPI ref / UTR / receipt no." style="font-size:.82rem;">
+          <input class="form-control" name="transaction_id" value="${esc(t.transaction_id||'')}" placeholder="UPI ref / UTR / receipt no." style="font-size:.82rem;">
         </div>
-        <input type="hidden" name="screenshot_fn" value="${t.payment_screenshot||''}">
+        <input type="hidden" name="screenshot_fn" value="${esc(t.payment_screenshot||'')}">
         <div style="display:flex;gap:.5rem;">
           <button type="submit" class="btn btn-gold btn-sm" style="flex:1;justify-content:center;"><i class="bi bi-check-lg"></i> Save</button>
           <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('editPayForm_${t.id}').style.display='none'" style="flex:1;justify-content:center;">Cancel</button>
@@ -295,31 +288,31 @@ function openDrawer(id) {
     </div>
 
     ` : `
-    <!-- PENDING / PARTIAL / NEW JOIN: action -->
-    <div style="background:${t.is_new_join?'rgba(59,130,246,.08)':(t.status==='Partial'?'rgba(168,85,247,.08)':'var(--amber-bg)')};border:1px solid ${t.is_new_join?'rgba(59,130,246,.2)':(t.status==='Partial'?'rgba(168,85,247,.2)':'rgba(245,158,11,.2)')};border-radius:10px;padding:.85rem 1rem;margin-bottom:.85rem;display:flex;align-items:center;gap:10px;">
-      <i class="bi ${t.is_new_join?'bi-stars':(t.status==='Partial'?'bi-pie-chart':'bi-hourglass-split')}" style="color:${t.is_new_join?'#60a5fa':(t.status==='Partial'?'#c084fc':'#fbbf24')};font-size:1.1rem;flex-shrink:0;"></i>
+    <!-- PENDING: action -->
+    <div style="background:var(--amber-bg);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:.85rem 1rem;margin-bottom:.85rem;display:flex;align-items:center;gap:10px;">
+      <i class="bi bi-hourglass-split" style="color:#fbbf24;font-size:1.1rem;flex-shrink:0;"></i>
       <div>
-        <div style="font-size:.82rem;font-weight:600;color:${t.is_new_join?'#60a5fa':(t.status==='Partial'?'#c084fc':'#fbbf24')};">${t.is_new_join?'New Join — no rent due yet':(t.status==='Partial'?'Partial Payment Received':'Rent Pending')}</div>
-        <div style="font-size:.75rem;color:var(--text-dim);margin-top:2px;">${t.is_new_join?`Joined ${t.join_date||'this month'} · ${t.bill_month_label||'this month'}'s rent (₹${t.amount.toLocaleString('en-IN')}) will be billed as its own separate payment in ${t.due_month_label||'next month'} — not added to any other month's amount`:(t.status==='Partial'?`₹${t.balance_due.toLocaleString('en-IN')} still due — carried to next month if unpaid`:`Due: ${t.due_date} · ₹${t.amount.toLocaleString('en-IN')}`)}</div>
+        <div style="font-size:.82rem;font-weight:600;color:#fbbf24;">Rent Pending</div>
+        <div style="font-size:.75rem;color:var(--text-dim);margin-top:2px;">Due: ${esc(t.due_date)} · ₹${t.amount.toLocaleString('en-IN')}</div>
       </div>
     </div>
-    <a href="/tenant/verify-payment/${t.id}" class="btn btn-success" style="width:100%;justify-content:center;margin-bottom:.5rem;"><i class="bi bi-check-lg"></i> ${t.status==='Partial'?'Record Remaining Payment':'Mark as Paid'}${t.is_new_join?' Early (optional)':''}</a>
+    <a href="/tenant/verify-payment/${t.id}" class="btn btn-success" style="width:100%;justify-content:center;margin-bottom:.5rem;"><i class="bi bi-check-lg"></i> Mark as Paid</a>
     `}
 
     <!-- Contact & info -->
     <div style="background:var(--surface2);border-radius:10px;padding:.85rem 1rem;margin-bottom:.65rem;">
       <div style="font-size:.65rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.55rem;">Contact & Details</div>
-      <div style="font-size:.82rem;color:var(--text-dim);margin-bottom:.3rem;"><i class="bi bi-phone" style="margin-right:6px;width:14px;color:var(--text-faint);"></i>${t.phone}</div>
+      <div style="font-size:.82rem;color:var(--text-dim);margin-bottom:.3rem;"><i class="bi bi-phone" style="margin-right:6px;width:14px;color:var(--text-faint);"></i>${esc(t.phone)}</div>
       <div style="font-size:.82rem;color:var(--text-dim);margin-bottom:.3rem;"><i class="bi bi-safe" style="margin-right:6px;width:14px;color:var(--text-faint);"></i>Deposit: ₹${t.deposit.toLocaleString('en-IN')}</div>
-      ${t.join_date ? `<div style="font-size:.78rem;color:var(--text-faint);margin-bottom:.3rem;"><i class="bi bi-calendar-check" style="margin-right:6px;width:14px;"></i>Joined ${t.join_date}</div>` : ''}
-      ${t.notes ? `<div style="font-size:.78rem;color:var(--text-dim);margin-top:.4rem;padding-top:.4rem;border-top:1px solid var(--border);"><i class="bi bi-sticky" style="margin-right:6px;color:var(--text-faint);"></i>${t.notes}</div>` : ''}
+      ${t.join_date ? `<div style="font-size:.78rem;color:var(--text-faint);margin-bottom:.3rem;"><i class="bi bi-calendar-check" style="margin-right:6px;width:14px;"></i>Joined ${esc(t.join_date)}</div>` : ''}
+      ${t.notes ? `<div style="font-size:.78rem;color:var(--text-dim);margin-top:.4rem;padding-top:.4rem;border-top:1px solid var(--border);"><i class="bi bi-sticky" style="margin-right:6px;color:var(--text-faint);"></i>${esc(t.notes)}</div>` : ''}
     </div>
 
     <!-- Bottom actions -->
     <div class="mob-stack" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;">
       <a href="/renters/edit/${t.id}" class="btn btn-ghost" style="justify-content:center;font-size:.8rem;"><i class="bi bi-person-gear"></i> Edit Profile</a>
       <form method="POST" action="/tenant/remind/${t.id}" style="display:contents;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="channel" value="whatsapp">
         <button class="btn btn-ghost" style="justify-content:center;font-size:.8rem;color:#4ade80;border-color:rgba(34,197,94,.25);"><i class="bi bi-whatsapp"></i> Remind</button>
       </form>

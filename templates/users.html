@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Accounts — RentManager{% endblock %}
+{% block page_title %}Owner Accounts{% endblock %}
+{% block extra_styles %}
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.8); z-index:400; align-items:center; justify-content:center; backdrop-filter:blur(6px); }
+.modal-overlay.open { display:flex; }
+.modal-box { background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius-lg); padding:1.5rem; max-width:480px; width:90%; max-height:90vh; overflow-y:auto; }
+{% endblock %}
+{% block content %}
+
+<div class="fade-up d1" style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1.1rem;">
+  <div style="font-size:.82rem;color:var(--text-dim);">
+    This is a shared multi-owner site — every account (including yours) has a completely separate, private set of renters, rent records and expenses. No one can see another owner's data.
+  </div>
+  <button class="btn btn-gold btn-sm" onclick="document.getElementById('newUserModal').classList.add('open')">
+    <i class="bi bi-person-plus"></i> New Account
+  </button>
+</div>
+
+<div class="data-table-wrap fade-up d2">
+  <div class="table-controls">
+    <div class="table-title"><i class="bi bi-people" style="margin-right:6px;color:var(--gold);"></i>{{ accounts|length }} Account{{ 's' if accounts|length != 1 }}</div>
+  </div>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Account</th><th>Property</th><th>Role</th><th>Status</th>
+          <th style="text-align:right;">Renters</th>
+          <th style="text-align:right;">Records</th>
+          <th>Last Login</th>
+          <th style="text-align:center;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in accounts %}
+        <tr>
+          <td>
+            <div style="font-weight:600;color:var(--text);">
+              {{ a.username }}
+              {% if a.id == me %}<span style="font-size:.7rem;color:var(--gold);margin-left:5px;">(you)</span>{% endif %}
+            </div>
+            <div style="font-size:.74rem;color:var(--text-faint);">{{ a.full_name or '—' }}{% if a.email %} · {{ a.email }}{% endif %}</div>
+          </td>
+          <td style="color:var(--text-dim);font-size:.82rem;">{{ a.property_name or '—' }}</td>
+          <td>
+            {% if a.is_superadmin() %}<span class="badge" style="background:var(--purple-bg);color:#c084fc;border:1px solid rgba(168,85,247,.25);">Super Admin</span>
+            {% else %}<span class="badge b-pending" style="background:var(--blue-bg);color:#60a5fa;border-color:rgba(59,130,246,.25);">Owner</span>{% endif %}
+          </td>
+          <td>
+            {% if a.is_active %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Active</span>
+            {% else %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Disabled</span>{% endif %}
+          </td>
+          <td style="text-align:right;color:var(--text-dim);">{{ stats[a.id].renters }}</td>
+          <td style="text-align:right;color:var(--text-dim);">{{ stats[a.id].records }}</td>
+          <td style="font-size:.76rem;color:var(--text-faint);">{{ a.last_login.strftime("%d %b %Y %H:%M") if a.last_login else "never" }}</td>
+          <td style="text-align:center;">
+            <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;">
+              <button class="btn btn-ghost btn-sm" title="Reset password"
+                      data-uid="{{ a.id }}" data-username="{{ a.username }}" onclick="openReset(this.dataset.uid, this.dataset.username)"><i class="bi bi-key"></i></button>
+              {% if a.id != me %}
+              <form method="POST" action="{{ url_for('toggle_user', uid=a.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-ghost btn-sm" title="{{ 'Disable' if a.is_active else 'Enable' }}">
+                  <i class="bi bi-{{ 'pause-circle' if a.is_active else 'play-circle' }}"></i>
+                </button>
+              </form>
+              <button class="btn btn-danger btn-sm" title="Delete account and all its data"
+                      data-uid="{{ a.id }}" data-username="{{ a.username }}" onclick="openDelete(this.dataset.uid, this.dataset.username)"><i class="bi bi-trash"></i></button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- New account modal -->
+<div class="modal-overlay" id="newUserModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.1rem;">
+      <div style="font-weight:600;color:var(--text);">Create New Account</div>
+      <button onclick="document.getElementById('newUserModal').classList.remove('open')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.1rem;"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <form method="POST" action="{{ url_for('create_user') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group" style="margin-bottom:.85rem;">
+        <label>Username <span style="color:var(--red)">*</span></label>
+        <input class="form-control" name="username" required minlength="3" placeholder="e.g. ramesh.k">
+      </div>
+      <div class="form-group" style="margin-bottom:.85rem;">
+        <label>Password <span style="color:var(--red)">*</span></label>
+        <input class="form-control" name="password" type="password" required minlength="10" placeholder="Min 10 characters">
+      </div>
+      <div class="form-grid form-grid-2" style="margin-bottom:.85rem;">
+        <div class="form-group"><label>Full Name</label><input class="form-control" name="full_name"></div>
+        <div class="form-group"><label>Email</label><input class="form-control" name="email" type="email"></div>
+      </div>
+      <div class="form-grid form-grid-2" style="margin-bottom:1.2rem;">
+        <div class="form-group"><label>Property Name</label><input class="form-control" name="property_name"></div>
+        <div class="form-group">
+          <label>Role</label>
+          <select class="form-control" name="role">
+            <option value="owner">Owner — own data only</option>
+            <option value="superadmin">Can manage other owner accounts</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-gold"><i class="bi bi-check-lg"></i> Create Account</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('newUserModal').classList.remove('open')">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Reset password modal -->
+<div class="modal-overlay" id="resetModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box" style="max-width:400px;">
+    <div style="font-weight:600;color:var(--text);margin-bottom:1rem;">Reset password — <span id="resetName" style="color:var(--gold);"></span></div>
+    <form method="POST" id="resetForm">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group" style="margin-bottom:1.2rem;">
+        <label>New Password</label>
+        <input class="form-control" name="new_password" type="password" required minlength="10" placeholder="Min 10 characters">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-gold"><i class="bi bi-key"></i> Reset</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('resetModal').classList.remove('open')">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Delete account modal -->
+<div class="modal-overlay" id="deleteModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box" style="max-width:420px;border-color:rgba(239,68,68,.35);">
+    <div style="font-weight:600;color:#f87171;margin-bottom:.75rem;"><i class="bi bi-exclamation-triangle"></i> Delete account</div>
+    <p style="font-size:.83rem;color:var(--text-dim);margin-bottom:1rem;">
+      This permanently deletes <strong id="delName" style="color:var(--text);"></strong> and every renter, rent record and expense belonging to it. This cannot be undone.
+    </p>
+    <form method="POST" id="deleteForm">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group" style="margin-bottom:1.2rem;">
+        <label>Type the username to confirm</label>
+        <input class="form-control" name="confirm_username" required autocomplete="off" placeholder="username">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-danger"><i class="bi bi-trash"></i> Delete Permanently</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('deleteModal').classList.remove('open')">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openReset(id, name) {
+  document.getElementById('resetName').textContent = name;
+  document.getElementById('resetForm').action = '/users/reset-password/' + encodeURIComponent(id);
+  document.getElementById('resetModal').classList.add('open');
+}
+function openDelete(id, name) {
+  document.getElementById('delName').textContent = name;
+  document.getElementById('deleteForm').action = '/users/delete/' + encodeURIComponent(id);
+  document.getElementById('deleteModal').classList.add('open');
+}
+</script>
+{% endblock %}

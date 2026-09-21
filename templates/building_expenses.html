@@ -41,7 +41,7 @@
     <div class="card-header"><span><i class="bi bi-plus-circle" style="margin-right:6px;color:var(--gold);"></i>Add Building Expense</span></div>
     <div class="card-body">
       <form method="POST" action="{{ url_for('add_building_expense') }}" enctype="multipart/form-data" id="buildingForm">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-grid form-grid-2" style="margin-bottom:.85rem;">
           <div class="form-group">
             <label>Description <span style="color:var(--red)">*</span></label>
@@ -141,8 +141,8 @@
           </td>
           <td style="text-align:center;">
             <form method="POST" action="{{ url_for('delete_building_expense', eid=e.id) }}"
-                  onsubmit="return confirm('Delete \'{{ e.description }}\' (₹{{ '{:,.0f}'.format(e.amount) }})?')">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  data-confirm="Delete '{{ e.description }}' (₹{{ '{:,.0f}'.format(e.amount) }})?">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button>
             </form>
           </td>
@@ -220,11 +220,11 @@ new Chart(document.getElementById('catChart').getContext('2d'), {
     plugins: {
       legend: {
         position: 'bottom',
-        labels: { color: '#A79B85', font: { size: 11 }, boxWidth: 10, padding: 8 }
+        labels: { color: '#8b93a8', font: { size: 11 }, boxWidth: 10, padding: 8 }
       },
       tooltip: {
         callbacks: { label: c => ' ₹' + c.raw.toLocaleString('en-IN') },
-        backgroundColor: '#241F17',
+        backgroundColor: '#1e2535',
         borderColor: 'rgba(255,255,255,0.1)',
         borderWidth: 1,
         padding: 10

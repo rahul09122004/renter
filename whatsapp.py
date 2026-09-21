@@ -7,6 +7,10 @@ import os
 import logging
 import requests
 
+def _mask(p):
+    p = "".join(ch for ch in str(p or "") if ch.isdigit())
+    return ("*" * max(0, len(p) - 4)) + p[-4:]
+
 logger = logging.getLogger(__name__)
 
 WHATSAPP_API_URL = "https://graph.facebook.com/v19.0/{phone_number_id}/messages"
@@ -57,9 +61,9 @@ def send_rent_reminder(to_phone: str, tenant_name: str, amount: float, due_date:
         resp = requests.post(url, headers=_get_headers(), json=payload, timeout=10)
         result = resp.json()
         if resp.status_code == 200:
-            logger.info(f"[WhatsApp] Reminder sent to {to_phone}")
+            logger.info(f"[WhatsApp] Reminder sent to {_mask(to_phone)}")
         else:
-            logger.warning(f"[WhatsApp] Failed {to_phone}: {result}")
+            logger.warning(f"[WhatsApp] Failed {_mask(to_phone)}: HTTP {resp.status_code} {str(result.get('error', {}).get('message', ''))[:120] if isinstance(result, dict) else ''}")
         return result
     except requests.RequestException as e:
         logger.error(f"[WhatsApp] Request error: {e}")
@@ -102,7 +106,7 @@ def send_payment_confirmation(to_phone: str, tenant_name: str, amount: float, pa
     try:
         resp = requests.post(url, headers=_get_headers(), json=payload, timeout=10)
         result = resp.json()
-        logger.info(f"[WhatsApp] Confirmation sent to {to_phone}: {result}")
+        logger.info(f"[WhatsApp] Confirmation sent to {_mask(to_phone)}")
         return result
     except requests.RequestException as e:
         logger.error(f"[WhatsApp] Confirmation error: {e}")

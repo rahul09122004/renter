@@ -43,7 +43,7 @@
     </div>
 
     <form method="POST" enctype="multipart/form-data" id="upload-form">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="file" name="excel_file" id="excel_file"
              accept=".xlsx,.xls" style="display:none"
              onchange="handleFileSelect(this)">

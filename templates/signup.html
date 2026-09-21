@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Create Account — RentManager{% endblock %}
+{% block auth_content %}
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:1.5rem 1rem;position:relative;overflow:hidden;">
+  <div style="position:absolute;width:600px;height:600px;background:radial-gradient(circle,rgba(232,160,32,0.06) 0%,transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;"></div>
+
+  <div style="width:100%;max-width:460px;position:relative;animation:fadeUp 0.5s ease both;">
+    <div style="text-align:center;margin-bottom:1.5rem;">
+      <div style="width:52px;height:52px;background:var(--gold);border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-size:1.4rem;color:#0f1117;margin-bottom:1rem;box-shadow:0 8px 32px var(--gold-glow);">
+        <i class="bi bi-person-plus"></i>
+      </div>
+      <div style="font-family:'Playfair Display',serif;font-size:1.5rem;color:var(--text);margin-bottom:4px;">Create your account</div>
+      <div style="font-size:0.78rem;color:var(--text-faint);">Your own private workspace — nobody else can see your data</div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.75rem;">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ cat }}" style="margin-bottom:1rem;">
+            <i class="bi bi-exclamation-circle"></i><span>{{ msg }}</span>
+            <button class="btn-close-alert" onclick="this.parentElement.remove()">×</button>
+          </div>
+        {% endfor %}
+      {% endwith %}
+
+      <form method="POST" autocomplete="off">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group" style="margin-bottom:.9rem;">
+          <label>Username <span style="color:var(--red)">*</span></label>
+          <input class="form-control" type="text" name="username" required autofocus
+                 minlength="3" maxlength="40" pattern="[a-zA-Z0-9._\-]+" autocomplete="username"
+                 value="{{ form.get('username','') }}" placeholder="e.g. ramesh.k">
+          <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Letters, numbers, dot, dash or underscore. Used to sign in.</div>
+        </div>
+        <div class="form-grid form-grid-2" style="margin-bottom:.9rem;">
+          <div class="form-group">
+            <label>Full Name</label>
+            <input class="form-control" type="text" name="full_name" maxlength="120" value="{{ form.get('full_name','') }}" placeholder="Ramesh Kumar">
+          </div>
+          <div class="form-group">
+            <label>Email <span style="color:var(--red)">*</span></label>
+            <input class="form-control" type="email" name="email" required maxlength="120" autocomplete="email" value="{{ form.get('email','') }}" placeholder="you@email.com">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:.9rem;">
+          <label>Property Name</label>
+          <input class="form-control" type="text" name="property_name" maxlength="120" value="{{ form.get('property_name','') }}" placeholder="e.g. Sunrise Apartments">
+        </div>
+        <div class="form-grid form-grid-2" style="margin-bottom:1.5rem;">
+          <div class="form-group">
+            <label>Password <span style="color:var(--red)">*</span></label>
+            <input class="form-control" type="password" name="password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="min. 10 characters">
+          </div>
+          <div class="form-group">
+            <label>Confirm Password <span style="color:var(--red)">*</span></label>
+            <input class="form-control" type="password" name="confirm_password" required minlength="10" maxlength="128" autocomplete="new-password" placeholder="repeat password">
+          </div>
+        </div>
+        {% if invite %}
+        <div class="form-group" style="margin-bottom:.9rem;">
+          <label>Invitation code <span style="color:var(--red)">*</span></label>
+          <input class="form-control" type="text" name="invite_code" required maxlength="100" autocomplete="off">
+        </div>
+        {% endif %}
+        <div aria-hidden="true" style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden;">
+  <label>Leave this field empty <input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+</div>
+        <button type="submit" class="btn btn-gold" style="width:100%;padding:.75rem;font-size:.95rem;justify-content:center;">
+          <i class="bi bi-check-circle"></i> Create Account
+        </button>
+      </form>
+
+      <div style="text-align:center;margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--border);font-size:.82rem;color:var(--text-dim);">
+        Already have an account?
+        <a href="{{ url_for('login') }}" style="color:var(--gold);font-weight:600;text-decoration:none;">Sign in</a>
+      </div>
+    </div>
+  </div>
+</div>
+<style>@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}</style>
+{% endblock %}

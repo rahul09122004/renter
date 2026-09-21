@@ -10,7 +10,7 @@
     </div>
     <div class="card-body">
       <form method="POST" enctype="multipart/form-data">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <!-- Section: Personal Info -->
         <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);margin-bottom:.6rem;">Personal Info</div>
@@ -62,7 +62,7 @@
             <label>Rent Due Day <span style="color:var(--red)">*</span></label>
             <input class="form-control" name="due_day" type="number" min="1" max="31" required
               value="{{ tenant.get_due_day() if tenant else 5 }}" placeholder="5">
-            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Day of every month (e.g. 5 = rent due on 5th of each month)</div>
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Day of the FOLLOWING month (e.g. 5 = September rent is due 5 Oct)</div>
           </div>
           <div class="form-group">
             <label>Join Date</label>

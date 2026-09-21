@@ -10,7 +10,7 @@
     </div>
     <div class="card-body">
       <form method="POST">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group" style="margin-bottom:1rem;">
           <label>Full Name *</label>
           <input class="form-control" name="name" required value="{{ tenant.name if tenant else '' }}" placeholder="Arjun Sharma">
@@ -27,7 +27,7 @@
           <label>Due Day (1–31) *</label>
           <input class="form-control" name="due_day" type="number" min="1" max="31" required
             value="{{ tenant.get_due_day() if tenant else 5 }}" placeholder="5">
-          <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Day of month rent is due (e.g. 5 = 5th of every month)</div>
+          <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Day of the following month (e.g. 5 = September rent due 5 Oct)</div>
         </div>
         <div style="display:flex;gap:8px;">
           <button type="submit" class="btn btn-gold"><i class="bi bi-check-lg"></i> {{ action }} Tenant</button>

@@ -9,12 +9,10 @@
    plain scalars — safe in format(), if/else, and JS output.
 ══════════════════════════════════════════════════════════════════ #}
 
-{# — Monthly income (rent + deposit profit from vacate settlements) — #}
+{# — Monthly income — #}
 {% set _a = namespace(v=0) %}
 {% for r in rent_records %}{% if r.status == 'Paid' %}{% set _a.v = _a.v + r.rent_amount %}{% endif %}{% endfor %}
-{% set rent_income = _a.v %}
-{% set deposit_profit = deposit_profit or 0 %}
-{% set total_income = rent_income + deposit_profit %}
+{% set total_income = _a.v %}
 
 {# — Monthly pending — #}
 {% set _b = namespace(v=0) %}
@@ -27,12 +25,10 @@
 {% set total_expenses = total_common + total_building %}
 {% set net_profit     = total_income - total_expenses %}
 
-{# — FY income (rent + deposit profit) — #}
+{# — FY income — #}
 {% set _c = namespace(v=0) %}
 {% for r in fy_records %}{% if r.status == 'Paid' %}{% set _c.v = _c.v + r.rent_amount %}{% endif %}{% endfor %}
-{% set fy_rent_income = _c.v %}
-{% set fy_deposit_profit = fy_deposit_profit or 0 %}
-{% set fy_income = fy_rent_income + fy_deposit_profit %}
+{% set fy_income = _c.v %}
 
 {# — FY deposits — #}
 {% set _d = namespace(v=0) %}
@@ -162,14 +158,8 @@
               <td style="text-align:right;color:#4ade80;font-weight:500;">₹{{ "{:,.0f}".format(r.rent_amount) }}</td>
             </tr>
             {% endif %}{% endfor %}
-            {% if rent_income == 0 and deposit_profit == 0 %}
+            {% if total_income == 0 %}
             <tr><td style="padding-left:1.75rem;color:var(--text-faint);font-style:italic;">No rent collected for {{ sel_label }}</td><td style="text-align:right;color:var(--text-faint);">₹0</td></tr>
-            {% endif %}
-            {% if deposit_profit > 0 %}
-            <tr>
-              <td style="padding-left:1.75rem;color:var(--text-dim);">Deposit profit — vacate settlement(s) <span style="font-size:.72rem;opacity:.55;">(charged over actual spend)</span></td>
-              <td style="text-align:right;color:#c084fc;font-weight:500;">₹{{ "{:,.0f}".format(deposit_profit) }}</td>
-            </tr>
             {% endif %}
             <tr style="background:rgba(34,197,94,0.08);">
               <td style="font-weight:600;color:var(--text);padding:.7rem 1rem;">Total Income</td>
@@ -409,10 +399,7 @@
       <div class="card-body" style="padding:0;">
         <table>
           <tbody>
-            <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Gross Rent Income</td><td style="text-align:right;color:#4ade80;font-weight:600;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_rent_income) }}</td></tr>
-            {% if fy_deposit_profit > 0 %}
-            <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Deposit Profit (vacate settlements)</td><td style="text-align:right;color:#c084fc;font-weight:600;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_deposit_profit) }}</td></tr>
-            {% endif %}
+            <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Gross Rent Income</td><td style="text-align:right;color:#4ade80;font-weight:600;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_income) }}</td></tr>
             <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Common Expenses</td><td style="text-align:right;color:#f87171;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_common_total) }}</td></tr>
             <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Building Expenses</td><td style="text-align:right;color:#f87171;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_building_total) }}</td></tr>
             <tr><td style="color:var(--text-dim);padding:.6rem 1.2rem;">Total Expenses</td><td style="text-align:right;color:#f87171;font-weight:600;padding:.6rem 1.2rem;">₹{{ "{:,.0f}".format(fy_expenses_total) }}</td></tr>
@@ -521,27 +508,33 @@ function syncYear(sel) {
 // ── Ledger data (Jinja2 renders numbers into JS array literal) ──
 const LEDGER_DATA = [
   {% for r in rent_records %}{% if r.status == 'Paid' %}
-  {date:"{{ r.payment_date.strftime('%d %b %Y') if r.payment_date else '—' }}",
-   particulars:"Rent \u2014 {{ r.tenant_name | replace('"','') }}{% if r.tenant and r.tenant.unit %} ({{ r.tenant.unit }}){% endif %}",
+  {date: {{ (r.payment_date.strftime('%d %b %Y') if r.payment_date else '—') | tojson }},
+   particulars: {{ ('Rent — ' ~ (r.tenant_name or '') ~ ((' (' ~ r.tenant.unit ~ ')') if r.tenant and r.tenant.unit else '')) | tojson }},
    category:"Rent", type:"credit", amount:{{ r.rent_amount | int }}},
   {% endif %}{% endfor %}
   {% for e in common %}
-  {date:"{{ e.date.strftime('%d %b %Y') if e.date else '—' }}",
-   particulars:"{{ e.description | replace('"','') }}",
+  {date: {{ (e.date.strftime('%d %b %Y') if e.date else '—') | tojson }},
+   particulars: {{ (e.description or '') | tojson }},
    category:"Common Expense", type:"debit", amount:{{ e.amount | int }}},
   {% endfor %}
   {% for e in building %}
-  {date:"{{ e.date.strftime('%d %b %Y') if e.date else '—' }}",
-   particulars:"{{ e.description | replace('"','') }}",
+  {date: {{ (e.date.strftime('%d %b %Y') if e.date else '—') | tojson }},
+   particulars: {{ (e.description or '') | tojson }},
    category:"Building Expense", type:"debit", amount:{{ e.amount | int }}},
   {% endfor %}
 ];
+// HTML-escape any text before it is placed into innerHTML.
+function esc(v) {
+  return String(v).replace(/[&<>"']/g, function (c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
 
 // ── Build Ledger table ────────────────────────────────────
 (function buildLedger() {
   const tbody = document.getElementById('ledger-body');
   if (!LEDGER_DATA.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2.5rem;color:var(--text-faint);"><i class="bi bi-inbox" style="font-size:1.5rem;display:block;margin-bottom:.5rem;opacity:.4;"></i>No entries for {{ sel_label }}.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2.5rem;color:var(--text-faint);"><i class="bi bi-inbox" style="font-size:1.5rem;display:block;margin-bottom:.5rem;opacity:.4;"></i>No entries for ' + {{ sel_label | tojson }} + '.</td></tr>';
     updateLedgerFooter(0, 0); return;
   }
   let balance = 0, totalC = 0, totalD = 0;
@@ -558,9 +551,9 @@ const LEDGER_DATA = [
     row.dataset.type = e.type;
     row.dataset.text = (e.date + e.particulars + e.category).toLowerCase();
     row.innerHTML = `<td style="color:var(--text-faint);font-size:.78rem;">${i+1}</td>
-      <td style="color:var(--text-dim);white-space:nowrap;font-size:.82rem;">${e.date}</td>
-      <td style="color:var(--text);">${e.particulars}</td>
-      <td style="font-size:.78rem;color:var(--text-dim);">${e.category}</td>
+      <td style="color:var(--text-dim);white-space:nowrap;font-size:.82rem;">${esc(e.date)}</td>
+      <td style="color:var(--text);">${esc(e.particulars)}</td>
+      <td style="font-size:.78rem;color:var(--text-dim);">${esc(e.category)}</td>
       <td style="text-align:right;">${dCell}</td>
       <td style="text-align:right;">${cCell}</td>
       <td style="text-align:right;font-weight:500;color:${balColor};">₹${fmt(Math.abs(balance))}</td>`;
@@ -666,8 +659,8 @@ function initCharts() {
       data: {
         labels: fyMonths.map(m => m.label),
         datasets: [{ label:'Rent Collected', data: fyMonths.map(m => m.income),
-          borderColor:'#C68A3D', backgroundColor:'rgba(232,160,32,.1)',
-          fill:true, tension:0.4, pointRadius:4, pointBackgroundColor:'#C68A3D', borderWidth:2 }]
+          borderColor:'#e8a020', backgroundColor:'rgba(232,160,32,.1)',
+          fill:true, tension:0.4, pointRadius:4, pointBackgroundColor:'#e8a020', borderWidth:2 }]
       },
       options: {
         responsive:true, maintainAspectRatio:false,
@@ -719,12 +712,14 @@ document.getElementById('btnExportCSV').onclick = function () {
   if (!LEDGER_DATA.length) return alert('No data to export.');
   const rows = [['#','Date','Particulars','Category','Type','Amount']];
   LEDGER_DATA.forEach((e,i) => rows.push([i+1, e.date, e.particulars, e.category, e.type, e.amount]));
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  // Neutralise spreadsheet formula injection: a text cell starting with = + - @ would execute in Excel.
+  const safe = c => (typeof c === 'string' && /^[=+\-@\t\r]/.test(c)) ? "'" + c : c;
+  const csv = rows.map(r => r.map(c => `"${String(safe(c)).replace(/"/g,'""')}"`).join(',')).join('\n');
   dlBlob(csv, 'text/csv', 'ca_audit_{{ sel_label | replace(" ","_") }}.csv');
 };
 document.getElementById('btnExportJSON').onclick = function () {
   const payload = {
-    period: '{{ sel_label }}',
+    period: {{ sel_label | tojson }},
     generated: new Date().toISOString(),
     summary: { total_income: {{ total_income | int }}, total_expenses: {{ total_expenses | int }}, net: {{ net_profit | int }} },
     entries: LEDGER_DATA

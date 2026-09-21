@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>{% block title %}RentManager{% endblock %}</title>
   <!-- Favicon: building logo shown in browser tab / URL bar -->
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23C68A3D'/%3E%3Crect x='8' y='14' width='16' height='13' rx='1.5' fill='%2314110D'/%3E%3Crect x='11' y='8' width='10' height='8' rx='1.5' fill='%2314110D'/%3E%3Crect x='14' y='5' width='4' height='5' rx='1' fill='%2314110D'/%3E%3Crect x='10' y='17' width='3' height='3' rx='.5' fill='%23C68A3D'/%3E%3Crect x='14.5' y='17' width='3' height='3' rx='.5' fill='%23C68A3D'/%3E%3Crect x='19' y='17' width='3' height='3' rx='.5' fill='%23C68A3D'/%3E%3Crect x='10' y='22' width='3' height='3' rx='.5' fill='%23C68A3D'/%3E%3Crect x='19' y='22' width='3' height='3' rx='.5' fill='%23C68A3D'/%3E%3Crect x='13.5' y='22' width='5' height='5' rx='.5' fill='%23C68A3D'/%3E%3C/svg%3E" />
-  <link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23C68A3D'/%3E%3Crect x='8' y='14' width='16' height='13' rx='1.5' fill='%2314110D'/%3E%3Crect x='11' y='8' width='10' height='8' rx='1.5' fill='%2314110D'/%3E%3Crect x='14' y='5' width='4' height='5' rx='1' fill='%2314110D'/%3E%3Crect x='10' y='17' width='3' height='3' rx='.5' fill='%23C68A3D'/%3E%3Crect x='14.5' y='17' width='3' height='3' rx='.5' fill='%23C68A3D'/%3E%3Crect x='19' y='17' width='3' height='3' rx='.5' fill='%23C68A3D'/%3E%3Crect x='10' y='22' width='3' height='3' rx='.5' fill='%23C68A3D'/%3E%3Crect x='19' y='22' width='3' height='3' rx='.5' fill='%23C68A3D'/%3E%3Crect x='13.5' y='22' width='5' height='5' rx='.5' fill='%23C68A3D'/%3E%3C/svg%3E" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e8a020'/%3E%3Crect x='8' y='14' width='16' height='13' rx='1.5' fill='%230f1117'/%3E%3Crect x='11' y='8' width='10' height='8' rx='1.5' fill='%230f1117'/%3E%3Crect x='14' y='5' width='4' height='5' rx='1' fill='%230f1117'/%3E%3Crect x='10' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='14.5' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='19' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='10' y='22' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='19' y='22' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='13.5' y='22' width='5' height='5' rx='.5' fill='%23e8a020'/%3E%3C/svg%3E" />
+  <link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e8a020'/%3E%3Crect x='8' y='14' width='16' height='13' rx='1.5' fill='%230f1117'/%3E%3Crect x='11' y='8' width='10' height='8' rx='1.5' fill='%230f1117'/%3E%3Crect x='14' y='5' width='4' height='5' rx='1' fill='%230f1117'/%3E%3Crect x='10' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='14.5' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='19' y='17' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='10' y='22' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='19' y='22' width='3' height='3' rx='.5' fill='%23e8a020'/%3E%3Crect x='13.5' y='22' width='5' height='5' rx='.5' fill='%23e8a020'/%3E%3C/svg%3E" />
   <!-- Mobile browser toolbar / address bar color -->
-  <meta name="theme-color" content="#C68A3D" />
-  <meta name="csrf-token" content="{{ csrf_token() if csrf_token else '' }}" />
+  <meta name="theme-color" content="#e8a020" />
+  <meta name="csrf-token" content="{{ csrf_token() }}" />
 
   <!-- ── PERFORMANCE: DNS + preconnect for ALL CDN origins used ── -->
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
@@ -18,10 +18,10 @@
 
   <!-- ── FONTS: non-blocking swap, system-font fallback prevents FOUT ── -->
   <link rel="preload" as="style"
-    href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Playfair+Display:wght@600&display=swap"
     onload="this.onload=null;this.rel='stylesheet'" />
   <noscript>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet" />
   </noscript>
 
   <!-- ── BOOTSTRAP ICONS: non-blocking ── -->
@@ -33,30 +33,29 @@
   </noscript>
 
   <!-- ── CHART.JS: only preload on pages that actually chart ── -->
-  {% if request.endpoint in ['dashboard','income_expenses','ca_audit','rent_tracker'] %}
+  {% if request.endpoint in ['dashboard','income_expenses','ca_audit','rent_tracker','unit_analytics'] %}
   <link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" />
   {% endif %}
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
       --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      --font-serif: 'Fraunces', Georgia, serif;
-      --bg: #14110D; --surface: #1C1812; --surface2: #241F17;
-      --border: rgba(214,188,145,0.09); --border2: rgba(214,188,145,0.17);
-      --gold: #C68A3D; --gold-dim: #A66F2E; --gold-glow: rgba(198,138,61,0.16);
-      --text: #F2ECE0; --text-dim: #A79B85; --text-faint: #5C5344;
+      --font-serif: 'Playfair Display', Georgia, serif;
+      --bg: #0f1117; --surface: #161b27; --surface2: #1e2535;
+      --border: rgba(255,255,255,0.07); --border2: rgba(255,255,255,0.12);
+      --gold: #e8a020; --gold-dim: #c4841a; --gold-glow: rgba(232,160,32,0.18);
+      --text: #e8eaf0; --text-dim: #8b93a8; --text-faint: #4a5168;
       --green: #22c55e; --green-bg: rgba(34,197,94,0.12);
       --amber: #f59e0b; --amber-bg: rgba(245,158,11,0.12);
       --red: #ef4444;   --red-bg: rgba(239,68,68,0.12);
       --blue: #3b82f6;  --blue-bg: rgba(59,130,246,0.12);
       --purple: #a855f7;--purple-bg: rgba(168,85,247,0.12);
-      --sidebar-w: 240px; --radius: 9px; --radius-lg: 13px;
+      --sidebar-w: 240px; --radius: 12px; --radius-lg: 16px;
       --topbar-h: 56px; --bottom-nav-h: 64px;
     }
     html { font-size: 15px; }
     body { background: var(--bg); color: var(--text); font-family: var(--font-body);
            font-weight: 400; line-height: 1.6; -webkit-font-smoothing: antialiased; }
-    ::selection { background: var(--gold); color: #14110D; }
 
     /* ── SIDEBAR (desktop) ─────────────────────────────────── */
     .sidebar { width: var(--sidebar-w); height: 100vh; position: fixed; top: 0; left: 0;
@@ -65,11 +64,11 @@
       transition: transform .3s cubic-bezier(.4,0,.2,1); }
     .sidebar-brand { padding: 1.5rem 1.25rem 1.1rem; border-bottom: 1px solid var(--border);
       display: flex; align-items: center; gap: 11px; flex-shrink: 0; }
-    .brand-icon { width: 34px; height: 34px; background: var(--gold); border-radius: 6px;
-      display: flex; align-items: center; justify-content: center; font-size: .92rem;
-      color: #14110D; flex-shrink: 0; }
-    .brand-text { font-family: var(--font-serif); font-weight: 600; font-size: 1.08rem; color: var(--text); letter-spacing: -.01em; }
-    .brand-sub  { font-size: .64rem; color: var(--text-faint); letter-spacing: .09em; text-transform: uppercase; }
+    .brand-icon { width: 36px; height: 36px; background: var(--gold); border-radius: 9px;
+      display: flex; align-items: center; justify-content: center; font-size: .95rem;
+      color: #0f1117; flex-shrink: 0; box-shadow: 0 4px 16px var(--gold-glow); }
+    .brand-text { font-family: var(--font-serif); font-size: 1.05rem; color: var(--text); }
+    .brand-sub  { font-size: .65rem; color: var(--text-faint); letter-spacing: .06em; text-transform: uppercase; }
     .sidebar-nav { flex: 1; padding: .75rem 0; }
     .nav-section-label { font-size: .62rem; text-transform: uppercase; letter-spacing: .1em;
       color: var(--text-faint); padding: .65rem 1.25rem .35rem; }
@@ -78,36 +77,34 @@
       color: var(--text-dim); text-decoration: none; font-size: .85rem;
       transition: color .2s, background .2s; white-space: nowrap; }
     .nav-link i { font-size: .95rem; width: 17px; flex-shrink: 0; }
-    .nav-link:hover { color: var(--text); background: rgba(214,188,145,0.045); }
+    .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.04); }
     .nav-link.active { color: var(--gold); background: var(--gold-glow); font-weight: 500; }
     .nav-link.active::before { content:''; position:absolute; left:0; top:3px; bottom:3px;
       width:3px; background:var(--gold); border-radius:0 3px 3px 0; }
     .sidebar-footer { padding: .9rem 1.25rem; border-top: 1px solid var(--border); flex-shrink: 0; }
     .admin-chip { display: flex; align-items: center; gap: 9px; padding: .55rem .7rem;
       background: var(--surface2); border-radius: var(--radius); border: 1px solid var(--border); }
-    .admin-avatar { width: 30px; height: 30px; background: var(--gold);
-      border-radius: 6px; display: flex; align-items: center; justify-content: center;
-      font-size: .72rem; font-weight: 600; color: #14110D; flex-shrink: 0; }
+    .admin-avatar { width: 30px; height: 30px; background: linear-gradient(135deg,var(--gold),var(--gold-dim));
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: .72rem; font-weight: 600; color: #0f1117; flex-shrink: 0; }
     .admin-name { font-size: .8rem; font-weight: 500; color: var(--text); }
     .admin-role { font-size: .65rem; color: var(--text-faint); }
 
     /* ── MAIN WRAP ─────────────────────────────────────────── */
     .main-wrap { margin-left: var(--sidebar-w); min-height: 100vh; display: flex; flex-direction: column; }
     .topbar { position: sticky; top: 0; height: var(--topbar-h);
-      background: rgba(20,17,13,0.88); backdrop-filter: blur(16px);
+      background: rgba(15,17,23,0.88); backdrop-filter: blur(16px);
       border-bottom: 1px solid var(--border); padding: 0 1.75rem;
       display: flex; align-items: center; justify-content: space-between; z-index: 100; }
     .topbar-title { font-size: .85rem; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
     .topbar-title .page-name { color: var(--text); font-weight: 500; }
     .topbar-date { font-size: .76rem; color: var(--text-faint); background: var(--surface2);
-      border: 1px solid var(--border); padding: .28rem .75rem; border-radius: var(--radius); }
+      border: 1px solid var(--border); padding: .28rem .75rem; border-radius: 20px; }
     .page-body { flex: 1; padding: 1.75rem; }
 
     /* ── HAMBURGER (hidden on desktop) ─────────────────────── */
     .hamburger { display: none; background: none; border: none; color: var(--text);
-      font-size: 1.3rem; cursor: pointer; padding: .5rem; margin: -.5rem;
-      border-radius: 7px; transition: background .15s; }
-    .hamburger:active { background: rgba(214,188,145,0.08); }
+      font-size: 1.3rem; cursor: pointer; padding: .25rem; }
     .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
       z-index: 199; backdrop-filter: blur(2px); }
 
@@ -133,21 +130,22 @@
       font-size:.87rem; font-weight:500; color:var(--text); }
     .card-body { padding:1.4rem; }
 
-    /* ── STAT GRID — ledger-entry cards: a colored edge tab instead of a
-       decorative glow blob, numbers set in the serif for a "big figure" feel ── */
+    /* ── STAT GRID ─────────────────────────────────────────── */
     .stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.9rem; margin-bottom:1.5rem; }
-    .stat-card { background:var(--surface); border:1px solid var(--border); border-left-width: 3px;
-      border-radius:var(--radius); padding:1.1rem 1.3rem; position:relative;
+    .stat-card { background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius-lg); padding:1.15rem 1.4rem; position:relative;
       overflow:hidden; transition:border-color .2s,transform .2s; }
     .stat-card:hover { border-color:var(--border2); transform:translateY(-2px); }
-    .stat-card.c-gold{border-left-color:var(--gold)} .stat-card.c-green{border-left-color:var(--green)}
-    .stat-card.c-amber{border-left-color:var(--amber)} .stat-card.c-blue{border-left-color:var(--blue)}
-    .stat-card.c-purple{border-left-color:var(--purple)} .stat-card.c-red{border-left-color:var(--red)}
-    .stat-label { font-size:.68rem; text-transform:uppercase; letter-spacing:.09em;
-      color:var(--text-faint); margin-bottom:.5rem; font-weight: 500; }
-    .stat-value { font-family: var(--font-serif); font-size:1.7rem; font-weight:600; line-height:1.05; margin-bottom:.35rem; letter-spacing: -.01em; }
+    .stat-card::after { content:''; position:absolute; top:0; right:0; width:80px; height:80px;
+      border-radius:50%; opacity:.06; transform:translate(20px,-20px); }
+    .stat-card.c-gold::after{background:var(--gold)} .stat-card.c-green::after{background:var(--green)}
+    .stat-card.c-amber::after{background:var(--amber)} .stat-card.c-blue::after{background:var(--blue)}
+    .stat-card.c-purple::after{background:var(--purple)} .stat-card.c-red::after{background:var(--red)}
+    .stat-label { font-size:.7rem; text-transform:uppercase; letter-spacing:.08em;
+      color:var(--text-faint); margin-bottom:.4rem; }
+    .stat-value { font-size:1.55rem; font-weight:600; line-height:1.1; margin-bottom:.3rem; }
     .stat-sub   { font-size:.73rem; color:var(--text-dim); }
-    .stat-icon  { position:absolute; top:1.05rem; right:1.1rem; font-size:1rem; opacity:.3; }
+    .stat-icon  { position:absolute; top:1.1rem; right:1.1rem; font-size:1.05rem; opacity:.35; }
 
     /* ── TABLES ────────────────────────────────────────────── */
     .data-table-wrap { background:var(--surface); border:1px solid var(--border);
@@ -156,13 +154,13 @@
       display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
     .table-title { font-size:.88rem; font-weight:500; color:var(--text); }
     table { width:100%; border-collapse:collapse; }
-    th { padding:.65rem 1rem; font-size:.7rem; text-transform:uppercase; letter-spacing:.08em;
+    th { padding:.65rem 1rem; font-size:.72rem; text-transform:uppercase; letter-spacing:.07em;
       color:var(--text-faint); text-align:left; background:var(--surface2);
-      border-bottom:1px solid var(--border); font-weight:600; white-space:nowrap; }
-    td { padding:.7rem 1rem; font-size:.84rem; border-bottom:1px solid rgba(214,188,145,0.045);
+      border-bottom:1px solid var(--border); font-weight:500; white-space:nowrap; }
+    td { padding:.7rem 1rem; font-size:.84rem; border-bottom:1px solid rgba(255,255,255,0.04);
       color:var(--text-dim); vertical-align:middle; }
     tr:last-child td { border-bottom:none; }
-    tr:hover td { background:rgba(214,188,145,0.025); }
+    tr:hover td { background:rgba(255,255,255,0.02); }
     tr.row-overdue td { background:rgba(239,68,68,0.04); }
     tr.row-overdue:hover td { background:rgba(239,68,68,0.07); }
 
@@ -176,11 +174,11 @@
 
     /* ── BUTTONS ───────────────────────────────────────────── */
     .btn { display:inline-flex; align-items:center; gap:7px; padding:.5rem 1rem;
-      border-radius:7px; font-size:.83rem; font-weight:500; cursor:pointer;
-      border:1px solid transparent; text-decoration:none; transition:all .15s; line-height:1; }
+      border-radius:8px; font-size:.83rem; font-weight:500; cursor:pointer;
+      border:1px solid transparent; text-decoration:none; transition:all .2s; line-height:1; }
     .btn:disabled { opacity:.5; cursor:not-allowed; }
-    .btn-gold  { background:var(--gold); color:#14110D; border-color:var(--gold); font-weight:600; }
-    .btn-gold:hover { background:#D69A4D; }
+    .btn-gold  { background:var(--gold); color:#0f1117; border-color:var(--gold); }
+    .btn-gold:hover { background:#f0aa22; }
     .btn-ghost { background:transparent; color:var(--text-dim); border-color:var(--border2); }
     .btn-ghost:hover { border-color:var(--gold); color:var(--gold); }
     .btn-success{ background:var(--green-bg); color:#4ade80; border-color:rgba(34,197,94,.25); }
@@ -197,17 +195,17 @@
     .form-group  { display:flex; flex-direction:column; gap:.4rem; }
     .form-group label { font-size:.78rem; color:var(--text-dim); font-weight:500; }
     .form-control { background:var(--surface2); border:1px solid var(--border2);
-      border-radius:7px; padding:.55rem .85rem; color:var(--text); font-size:.85rem;
+      border-radius:8px; padding:.55rem .85rem; color:var(--text); font-size:.85rem;
       font-family:inherit; width:100%; transition:border-color .2s; }
     .form-control:focus { outline:none; border-color:var(--gold); }
     .form-control option { background:var(--surface2); }
     select.form-control { appearance:none;
-      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23A79B85' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b93a8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
       background-repeat:no-repeat; background-position:right .85rem center; padding-right:2.5rem; }
     textarea.form-control { resize:vertical; min-height:80px; }
     .chart-box { position:relative; }
-    .tabs { display:flex; gap:2px; background:var(--surface2); border-radius:9px; padding:3px; }
-    .tab-btn { flex:1; padding:.45rem .9rem; border-radius:7px; font-size:.82rem; font-weight:500;
+    .tabs { display:flex; gap:2px; background:var(--surface2); border-radius:10px; padding:3px; }
+    .tab-btn { flex:1; padding:.45rem .9rem; border-radius:8px; font-size:.82rem; font-weight:500;
       border:none; background:none; color:var(--text-dim); cursor:pointer; transition:all .2s; }
     .tab-btn.active { background:var(--surface); color:var(--gold); box-shadow:0 1px 4px rgba(0,0,0,.3); }
     .tab-panel { display:none; } .tab-panel.active { display:block; }
@@ -327,29 +325,24 @@
         display: flex;
         position: fixed; bottom: 0; left: 0; right: 0;
         height: var(--bottom-nav-h);
-        background: rgba(28,24,18,0.92);
-        backdrop-filter: blur(14px);
+        background: var(--surface);
         border-top: 1px solid var(--border2);
-        box-shadow: 0 -8px 24px rgba(0,0,0,.25);
         z-index: 150;
         align-items: stretch;
         padding-bottom: env(safe-area-inset-bottom, 0);
       }
       .bottom-nav a {
         flex: 1; display: flex; flex-direction: column; align-items: center;
-        justify-content: center; gap: 3px; color: var(--text-faint);
-        text-decoration: none; font-size: .58rem; font-weight: 500;
+        justify-content: center; gap: 2px; color: var(--text-faint);
+        text-decoration: none; font-size: .56rem; font-weight: 500;
         letter-spacing: .02em; text-transform: uppercase;
-        transition: color .15s; padding: .3rem .1rem; position: relative;
+        transition: color .15s; padding: .3rem .1rem;
+        border-top: 2px solid transparent;
         -webkit-tap-highlight-color: transparent;
       }
-      .bottom-nav a i { font-size: 1.15rem; transition: transform .15s; }
-      .bottom-nav a.active { color: var(--gold); }
-      .bottom-nav a.active::before { content:''; position:absolute; top:.15rem; left:50%;
-        transform:translateX(-50%); width:26px; height:26px; border-radius:8px;
-        background:var(--gold-glow); z-index:-1; }
-      .bottom-nav a.active i { transform: translateY(-1px); }
-      .bottom-nav a:active { opacity: .6; }
+      .bottom-nav a i { font-size: 1.15rem; }
+      .bottom-nav a.active { color: var(--gold); border-top-color: var(--gold); }
+      .bottom-nav a:active { background: rgba(255,255,255,.06); }
 
       /* Alert */
       .alert { font-size: .82rem; padding: .6rem .85rem; }
@@ -374,8 +367,8 @@
 </head>
 <body>
 
-{# ── LOGIN: no sidebar ── #}
-{% if request.endpoint == 'login' %}
+{# ── AUTH PAGES: no sidebar ── #}
+{% if request.endpoint in ['login', 'signup'] %}
   {% block auth_content %}{% endblock %}
 
 {# ── ALL OTHER PAGES ── #}
@@ -433,6 +426,11 @@
       </a>
     </div>
     <div class="nav-item">
+      <a href="{{ url_for('unit_analytics') }}" class="nav-link {% if request.endpoint=='unit_analytics' %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-buildings"></i> Unit Analytics
+      </a>
+    </div>
+    <div class="nav-item">
       <a href="{{ url_for('ca_audit') }}" class="nav-link {% if request.endpoint=='ca_audit' %}active{% endif %}" onclick="closeSidebar()">
         <i class="bi bi-shield-check"></i> CA Audit
       </a>
@@ -448,6 +446,14 @@
         <i class="bi bi-key"></i> Change Password
       </a>
     </div>
+    {% if session.get('is_superadmin') %}
+    <div class="nav-item">
+      <a href="{{ url_for('users') }}" class="nav-link {% if request.endpoint=='users' %}active{% endif %}" onclick="closeSidebar()">
+        <i class="bi bi-people-fill"></i> User Accounts
+      </a>
+    </div>
+    {% endif %}
+    <div class="nav-section-label">Data</div>
     <div class="nav-item">
       <a href="{{ url_for('download_excel') }}" class="nav-link" onclick="closeSidebar()">
         <i class="bi bi-file-earmark-excel"></i> Download Excel
@@ -458,17 +464,27 @@
         <i class="bi bi-file-earmark-arrow-up"></i> Upload Excel
       </a>
     </div>
+    <div class="nav-section-label" style="color:rgba(239,68,68,.6);">Danger Zone</div>
+    <div class="nav-item">
+      <a href="{{ url_for('reset_data') }}" class="nav-link {% if request.endpoint=='reset_data' %}active{% endif %}"
+         onclick="closeSidebar()" style="color:#f87171;">
+        <i class="bi bi-trash3"></i> Delete All Data
+      </a>
+    </div>
   </nav>
   <div class="sidebar-footer">
     <div class="admin-chip">
       <div class="admin-avatar">{{ session.get('admin_username','A')[0].upper() }}</div>
       <div>
         <div class="admin-name">{{ session.get('admin_username','Admin') }}</div>
-        <div class="admin-role">Super Admin</div>
+        <div class="admin-role">{% if current_user and current_user.property_name %}{{ current_user.property_name }}{% elif session.get('is_superadmin') %}Super Admin{% else %}Owner{% endif %}</div>
       </div>
-      <a href="{{ url_for('logout') }}" style="margin-left:auto;color:var(--text-faint);font-size:.9rem;" title="Logout">
-        <i class="bi bi-box-arrow-right"></i>
-      </a>
+      <form method="POST" action="{{ url_for('logout') }}" style="margin-left:auto;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" style="background:none;border:none;cursor:pointer;color:var(--text-faint);font-size:.9rem;" title="Logout" aria-label="Logout">
+          <i class="bi bi-box-arrow-right"></i>
+        </button>
+      </form>
     </div>
   </div>
 </aside>
@@ -545,9 +561,34 @@ document.addEventListener('keydown', e => { if(e.key==='Escape') closeSidebar();
 {% endif %}
 
 <!-- Chart.js: loaded only on pages that use charts -->
-{% if request.endpoint in ['dashboard','income_expenses','ca_audit','rent_tracker'] %}
+{% if request.endpoint in ['dashboard','income_expenses','ca_audit','rent_tracker','unit_analytics'] %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 {% endif %}
+<script>
+// Confirmation prompts: the message lives in a data-confirm attribute (HTML-escaped by Jinja),
+// never interpolated into inline JavaScript.
+document.addEventListener('submit', function (e) {
+  var m = e.target && e.target.getAttribute && e.target.getAttribute('data-confirm');
+  if (!m && e.submitter) m = e.submitter.getAttribute('data-confirm-click');
+  if (m && !window.confirm(m)) e.preventDefault();
+}, true);
+// Attach the CSRF token to every same-origin fetch()/XHR-style call.
+(function () {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  if (!meta || !window.fetch) return;
+  var token = meta.getAttribute('content'), orig = window.fetch;
+  window.fetch = function (input, init) {
+    init = init || {};
+    var method = (init.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') {
+      init.headers = new Headers(init.headers || {});
+      if (!init.headers.has('X-CSRFToken')) init.headers.set('X-CSRFToken', token);
+      init.credentials = init.credentials || 'same-origin';
+    }
+    return orig.call(this, input, init);
+  };
+})();
+</script>
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

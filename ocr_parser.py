@@ -30,7 +30,12 @@ TXN_PATTERNS = [
 # ── OCR.space ─────────────────────────────────────────────────────────────────
 def _extract_with_ocrspace(image_path: str) -> str:
     try:
-        api_key = os.getenv("OCRSPACE_API_KEY", "helloworld")
+        api_key = os.getenv("OCRSPACE_API_KEY", "").strip()
+        if not api_key:
+            # The public demo key is shared by everyone and rate-limited; payment
+            # screenshots are sent to a third party, so use your OWN key.
+            logger.warning("[OCR.space] OCRSPACE_API_KEY not set - using the shared public demo key")
+            api_key = "helloworld"
 
         ext = Path(image_path).suffix.lower()
         mime = {
@@ -62,7 +67,7 @@ def _extract_with_ocrspace(image_path: str) -> str:
             return ""
 
         text = (result.get("ParsedResults") or [{}])[0].get("ParsedText", "")
-        logger.info(f"[OCR.space] text[:200]: {text[:200]}")
+        logger.info(f"[OCR.space] extracted {len(text)} characters")
         return text
 
     except Exception as e:

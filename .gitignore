@@ -7,26 +7,29 @@ env/
 venv/
 .venv/
 
-# Environment
+# Secrets & environment — never commit
 .env
+.env.*
+!.env.example
 *.env
+*.pem
+*.key
 
-# Database — keep instance folder but ignore the db file
-instance/rent.db
-instance/*.db
+# Databases, backups, uploads (tenant documents are personal data)
+instance/
+*.db
+*.sqlite
+*.sqlite3
 backup/
-
-# Uploads (user files — don't commit to git)
 static/uploads/*
 !static/uploads/.gitkeep
+uploads/
 
-# IDE
+# IDE / OS
 .vscode/
 .idea/
 *.swp
-
-# OS
 .DS_Store
 Thumbs.db
-
 .sfdx
+.pytest_cache/

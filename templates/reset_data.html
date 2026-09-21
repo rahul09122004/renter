@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Delete All Data — RentManager{% endblock %}
+{% block page_title %}Delete All Data{% endblock %}
+{% block content %}
+
+<div style="max-width:620px;" class="fade-up d1">
+
+  <!-- Warning banner -->
+  <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:var(--radius-lg);padding:1.1rem 1.25rem;margin-bottom:1.25rem;display:flex;gap:12px;align-items:flex-start;">
+    <i class="bi bi-exclamation-octagon" style="color:#f87171;font-size:1.3rem;flex-shrink:0;margin-top:2px;"></i>
+    <div>
+      <div style="font-weight:700;color:#f87171;margin-bottom:.3rem;">This cannot be undone</div>
+      <div style="font-size:.84rem;color:var(--text-dim);">
+        Deleted records are gone permanently — there is no recycle bin and no undo.
+        Only <strong style="color:var(--text);">your own</strong> account data is affected; other accounts are untouched.
+        Download an Excel backup first if you might need this data again.
+      </div>
+      <a href="{{ url_for('download_excel') }}" class="btn btn-ghost btn-sm" style="margin-top:.7rem;">
+        <i class="bi bi-file-earmark-excel" style="color:#4ade80;"></i> Download backup first
+      </a>
+    </div>
+  </div>
+
+  <!-- What will be deleted -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-header"><span><i class="bi bi-database" style="margin-right:6px;color:var(--gold);"></i>What you currently have</span></div>
+    <div class="card-body" style="padding:.75rem 1.25rem;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem 1.25rem;">
+        {% for label, n in counts.items() %}
+        <div style="display:flex;justify-content:space-between;font-size:.84rem;padding:.25rem 0;border-bottom:1px solid rgba(255,255,255,.04);">
+          <span style="color:var(--text-faint);">{{ label }}</span>
+          <strong style="color:{% if n %}var(--text){% else %}var(--text-faint){% endif %};">{{ n }}</strong>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation form -->
+  <div class="card" style="border-color:rgba(239,68,68,.3);">
+    <div class="card-header" style="background:rgba(239,68,68,.06);">
+      <span><i class="bi bi-shield-lock" style="margin-right:6px;color:#f87171;"></i>Confirm Deletion</span>
+    </div>
+    <div class="card-body">
+      <form method="POST" autocomplete="off" onsubmit="return finalConfirm()">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group" style="margin-bottom:1.1rem;">
+          <label>What should be deleted?</label>
+          <select class="form-control" name="scope">
+            <option value="all"      {% if scope=='all' %}selected{% endif %}>Everything — renters, rent history, deposits, expenses</option>
+            <option value="rent"     {% if scope=='rent' %}selected{% endif %}>Rent history only — keep renters and expenses</option>
+            <option value="expenses" {% if scope=='expenses' %}selected{% endif %}>Expenses only — keep renters and rent history</option>
+          </select>
+        </div>
+
+        <!-- Step 1: password -->
+        <div class="form-group" style="margin-bottom:1.1rem;">
+          <label>1. Your account password <span style="color:var(--red)">*</span></label>
+          <input class="form-control" type="password" name="password" required placeholder="••••••••">
+        </div>
+
+        <!-- Step 2: captcha -->
+        <div class="form-group" style="margin-bottom:1.1rem;">
+          <label>2. Security check <span style="color:var(--red)">*</span></label>
+          <div style="display:flex;gap:.75rem;align-items:center;">
+            <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:.55rem 1rem;font-family:var(--font-serif);font-size:1.15rem;font-weight:700;color:var(--gold);letter-spacing:.12em;user-select:none;min-width:110px;text-align:center;">
+              {{ captcha }} = ?
+            </div>
+            <input class="form-control" type="number" name="captcha" required placeholder="Answer" style="max-width:140px;">
+          </div>
+          <div style="font-size:.7rem;color:var(--text-faint);margin-top:4px;">Solve the sum to prove this isn't an accidental click.</div>
+        </div>
+
+        <!-- Step 3: phrase -->
+        <div class="form-group" style="margin-bottom:1.5rem;">
+          <label>3. Type <code style="color:#f87171;background:rgba(239,68,68,.1);padding:1px 6px;border-radius:4px;">DELETE ALL DATA</code> to confirm <span style="color:var(--red)">*</span></label>
+          <input class="form-control" name="confirm_phrase" required placeholder="DELETE ALL DATA"
+                 style="font-family:monospace;letter-spacing:.05em;">
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-trash3"></i> Permanently Delete
+          </button>
+          <a href="{{ url_for('dashboard') }}" class="btn btn-ghost">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function finalConfirm() {
+  return confirm('Last chance — this permanently deletes the selected data and cannot be undone.\n\nContinue?');
+}
+</script>
+{% endblock %}

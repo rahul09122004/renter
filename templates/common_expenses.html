@@ -47,7 +47,7 @@
   </div>
   <div class="card-body">
     <form method="POST" action="{{ url_for('add_common_expense') }}" id="addExpenseForm">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-grid form-grid-3" style="margin-bottom:.85rem;">
         <div class="form-group">
           <label>Description <span style="color:var(--red)">*</span></label>
@@ -68,7 +68,7 @@
         </div>
         <div class="form-group">
           <label>Split Across Units</label>
-          <input class="form-control" name="split_units" id="f-units" type="number" value="5" min="1" max="20">
+          <input class="form-control" name="split_units" id="f-units" type="number" value="6" min="1" max="20">
         </div>
         <div class="form-group">
           <label>Date <span style="color:var(--red)">*</span></label>
@@ -144,8 +144,8 @@
           </td>
           <td style="text-align:center;">
             <form method="POST" action="{{ url_for('delete_common_expense', eid=e.id) }}"
-                  onsubmit="return confirm('Delete \'{{ e.description }}\' (₹{{ '{:,.0f}'.format(e.amount) }})?')">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  data-confirm="Delete '{{ e.description }}' (₹{{ '{:,.0f}'.format(e.amount) }})?">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-danger btn-sm" title="Delete">
                 <i class="bi bi-trash"></i>
               </button>
@@ -195,7 +195,12 @@ function updatePreview() {
   const text   = document.getElementById('preview-text');
   if (amount > 0) {
     const perUnit = (amount / units).toFixed(2);
-    text.innerHTML = `<strong style="color:var(--text)">₹${parseFloat(perUnit).toLocaleString('en-IN')}</strong> per unit — ₹${amount.toLocaleString('en-IN')} split across <strong style="color:var(--text)">${units}</strong> units${desc ? ' for <em>' + desc + '</em>' : ''}`;
+    text.textContent = '';
+    const mk = (tag, txt) => { const el = document.createElement(tag); el.textContent = txt; return el; };
+    text.append(mk('strong', '₹' + parseFloat(perUnit).toLocaleString('en-IN')),
+      ' per unit — ₹' + amount.toLocaleString('en-IN') + ' split across ',
+      mk('strong', String(units)), ' units');
+    if (desc) text.append(' for ', mk('em', desc));
     bar.style.display = 'block';
   } else {
     bar.style.display = 'none';

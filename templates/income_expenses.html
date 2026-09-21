@@ -6,9 +6,7 @@
 {% endblock %}
 {% block content %}
 
-{% set rent_income    = rent_records|selectattr('status','equalto','Paid')|sum(attribute='paid_amount') %}
-{% set deposit_profit = deposit_profit or 0 %}
-{% set total_income   = rent_income + deposit_profit %}
+{% set total_income   = rent_records|selectattr('status','equalto','Paid')|sum(attribute='paid_amount') %}
 {% set total_common   = common|sum(attribute='amount') %}
 {% set total_building = building|sum(attribute='amount') %}
 {% set total_expenses = total_common + total_building %}
@@ -70,12 +68,6 @@
     <div class="stat-label">Common Expenses</div>
     <div class="stat-value" style="color:#60a5fa">₹{{ "{:,.0f}".format(total_common) }}</div>
     <div class="stat-sub">{{ common|length }} entries</div>
-  </div>
-  <div class="stat-card c-purple">
-    <i class="bi bi-safe stat-icon" style="color:var(--purple)"></i>
-    <div class="stat-label">Deposit Profit</div>
-    <div class="stat-value" style="color:#c084fc">₹{{ "{:,.0f}".format(deposit_profit) }}</div>
-    <div class="stat-sub">{{ (settlements or [])|length }} vacate settlement(s)</div>
   </div>
   <div class="stat-card {% if net >= 0 %}c-green{% else %}c-red{% endif %}">
     <i class="bi bi-graph-up stat-icon" style="color:{% if net >= 0 %}var(--green){% else %}var(--red){% endif %}"></i>
@@ -146,21 +138,9 @@
         {% endfor %}
         {% if rent_records %}
         <tr style="border-top:2px solid var(--border2);background:var(--surface2);">
-          <td colspan="2" style="font-weight:600;color:var(--text);padding:.7rem 1rem;">Rent Collected</td>
+          <td colspan="2" style="font-weight:600;color:var(--text);padding:.7rem 1rem;">Total</td>
           <td style="font-weight:700;color:var(--text);text-align:right;padding:.7rem 1rem;">₹{{ "{:,.0f}".format(rent_records|sum(attribute='rent_amount')) }}</td>
-          <td style="font-weight:700;color:#4ade80;text-align:right;padding:.7rem 1rem;">₹{{ "{:,.0f}".format(rent_income) }}</td>
-          <td colspan="3"></td>
-        </tr>
-        {% endif %}
-        {% if deposit_profit > 0 %}
-        <tr style="background:var(--surface2);">
-          <td colspan="3" style="font-weight:600;color:var(--text);padding:.6rem 1rem;">+ Deposit Profit (vacate settlements)</td>
-          <td style="font-weight:700;color:#c084fc;text-align:right;padding:.6rem 1rem;">₹{{ "{:,.0f}".format(deposit_profit) }}</td>
-          <td colspan="3"></td>
-        </tr>
-        <tr style="border-top:2px solid var(--border2);background:var(--gold-glow);">
-          <td colspan="3" style="font-weight:700;color:var(--text);padding:.7rem 1rem;">Total Income</td>
-          <td style="font-weight:700;color:var(--gold);text-align:right;padding:.7rem 1rem;">₹{{ "{:,.0f}".format(total_income) }}</td>
+          <td style="font-weight:700;color:#4ade80;text-align:right;padding:.7rem 1rem;">₹{{ "{:,.0f}".format(total_income) }}</td>
           <td colspan="3"></td>
         </tr>
         {% endif %}
@@ -227,18 +207,18 @@ if (unitLabels.length > 0) {
       borderWidth:1, borderRadius:5, borderSkipped:false }] },
     options: { responsive:true, maintainAspectRatio:false,
       plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>' ₹'+c.raw.toLocaleString('en-IN')},
-        backgroundColor:'#241F17',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,padding:10}},
+        backgroundColor:'#1e2535',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,padding:10}},
       scales:{y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'},
-        ticks:{color:'#5C5344',callback:v=>'₹'+(v/1000).toFixed(0)+'k'},border:{display:false}},
-        x:{grid:{display:false},ticks:{color:'#5C5344',font:{size:10}},border:{display:false}}} }
+        ticks:{color:'#4a5168',callback:v=>'₹'+(v/1000).toFixed(0)+'k'},border:{display:false}},
+        x:{grid:{display:false},ticks:{color:'#4a5168',font:{size:10}},border:{display:false}}} }
   });
 }
 
 {% if total_expenses_js > 0 %}
 // Build category-grouped data from all expenses
 const rawExpenses = [
-  {% for e in common %}{ category: '{{ (e.category or "Uncategorized")|replace("'","") }}', amount: {{ e.amount }}, type: 'Common' },{% endfor %}
-  {% for e in building %}{ category: '{{ (e.category or "Uncategorized")|replace("'","") }}', amount: {{ e.amount }}, type: 'Building' },{% endfor %}
+  {% for e in common %}{ category: {{ (e.category or "Uncategorized") | tojson }}, amount: {{ e.amount }}, type: 'Common' },{% endfor %}
+  {% for e in building %}{ category: {{ (e.category or "Uncategorized") | tojson }}, amount: {{ e.amount }}, type: 'Building' },{% endfor %}
 ];
 
 // Group by category, summing amounts
@@ -257,7 +237,7 @@ new Chart(document.getElementById('expBreakChart').getContext('2d'), {
     borderColor: expPalette.slice(0, expLabels.length), borderWidth: 1.5, hoverOffset: 6 }] },
   options: { responsive: true, maintainAspectRatio: false,
     plugins: {
-      legend: { position: 'bottom', labels: { color: '#A79B85', font: { size: 10 }, boxWidth: 10, padding: 6 } },
+      legend: { position: 'bottom', labels: { color: '#8b93a8', font: { size: 10 }, boxWidth: 10, padding: 6 } },
       tooltip: {
         callbacks: {
           label: c => ' ₹' + c.raw.toLocaleString('en-IN'),
@@ -266,7 +246,7 @@ new Chart(document.getElementById('expBreakChart').getContext('2d'), {
             return pct + '% of total expenses';
           }
         },
-        backgroundColor: '#241F17', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10
+        backgroundColor: '#1e2535', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10
       }
     },
     cutout: '55%'
@@ -285,13 +265,13 @@ new Chart(document.getElementById('monthlyGroupChart').getContext('2d'), {
     {label:'Expenses', data:trendExpenses,  backgroundColor:'rgba(239,68,68,.55)', borderColor:'#ef4444', borderWidth:1, borderRadius:4, borderSkipped:false}
   ]},
   options:{responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{labels:{color:'#A79B85',font:{size:11},boxWidth:10}},
-      tooltip:{backgroundColor:'#241F17',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,
-        titleColor:'#e8eaf0',bodyColor:'#A79B85',padding:10,
+    plugins:{legend:{labels:{color:'#8b93a8',font:{size:11},boxWidth:10}},
+      tooltip:{backgroundColor:'#1e2535',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,
+        titleColor:'#e8eaf0',bodyColor:'#8b93a8',padding:10,
         callbacks:{label:c=>' ₹'+c.raw.toLocaleString('en-IN')}}},
     scales:{y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'},
-      ticks:{color:'#5C5344',callback:v=>'₹'+(v/1000).toFixed(0)+'k'},border:{display:false}},
-      x:{grid:{display:false},ticks:{color:'#5C5344'},border:{display:false}}}}
+      ticks:{color:'#4a5168',callback:v=>'₹'+(v/1000).toFixed(0)+'k'},border:{display:false}},
+      x:{grid:{display:false},ticks:{color:'#4a5168'},border:{display:false}}}}
 });
 
 }); // end DOMContentLoaded

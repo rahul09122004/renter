@@ -98,10 +98,9 @@
       </div>
       <div class="mob-stack" style="display:grid;grid-template-columns:repeat(3,1fr);gap:.7rem;">
         {% for t in tenants %}
-        {% set rec = record_by_tenant.get(t.id) %}
         <div style="display:flex;flex-direction:column;gap:3px;">
           <div style="font-size:.72rem;color:var(--text-faint);">{{ t.unit or 'Unit ' ~ loop.index }}</div>
-          <div style="height:6px;border-radius:3px;background:{% if t.status=='Paid' %}var(--green){% elif rec and rec.is_new_join_month() %}var(--blue){% elif rec and rec.is_overdue(today) %}var(--red){% else %}var(--amber){% endif %};"></div>
+          <div style="height:6px;border-radius:3px;background:{% if t.status=='Paid' %}var(--green){% elif today > t.current_due_date() %}var(--red){% else %}var(--amber){% endif %};"></div>
           <div style="font-size:.68rem;color:var(--text-faint);">₹{{ "{:,.0f}".format(t.amount) }}</div>
         </div>
         {% endfor %}
@@ -140,8 +139,7 @@
       </tr></thead>
       <tbody>
         {% for t in tenants %}
-        {% set rec = record_by_tenant.get(t.id) %}
-        <tr {% if rec and rec.is_overdue(today) %}class="row-overdue"{% endif %}>
+        <tr {% if t.status=='Pending' and today > t.current_due_date() %}class="row-overdue"{% endif %}>
           <td>
             <div style="display:flex;align-items:center;gap:9px;">
               <div style="width:30px;height:30px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:600;color:var(--gold);flex-shrink:0;">{{ t.name[0].upper() }}</div>
@@ -153,12 +151,10 @@
           </td>
           <td style="color:var(--text-dim);">{{ t.unit or '—' }}</td>
           <td style="font-weight:600;color:var(--text);">₹{{ "{:,.0f}".format(t.amount) }}</td>
-          <td style="color:var(--text-dim);">{{ t.get_due_day() }}th</td>
+          <td style="color:var(--text-dim);">{{ t.current_due_date().strftime("%d %b") }}</td>
           <td>
             {% if t.status=='Paid' %}<span class="badge b-paid"><span class="b-dot" style="background:#4ade80"></span>Paid</span>
-            {% elif t.status=='Partial' %}<span class="badge" style="background:rgba(168,85,247,.12);color:#c084fc;border:1px solid rgba(168,85,247,.25);"><span class="b-dot" style="background:#c084fc"></span>Partial</span>
-            {% elif rec and rec.is_new_join_month() %}<span class="badge" style="background:var(--blue-bg);color:#60a5fa;border:1px solid rgba(59,130,246,.2);"><span class="b-dot" style="background:#60a5fa"></span>New Join</span>
-            {% elif rec and rec.is_overdue(today) %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Overdue</span>
+            {% elif t.status=='Pending' and today > t.current_due_date() %}<span class="badge b-overdue"><span class="b-dot" style="background:#f87171"></span>Overdue</span>
             {% else %}<span class="badge b-pending"><span class="b-dot" style="background:#fbbf24"></span>Pending</span>{% endif %}
           </td>
           <td style="color:var(--text-faint);font-size:.8rem;">{{ t.payment_date.strftime("%d %b") if t.payment_date else "—" }}</td>
@@ -166,7 +162,7 @@
             <div style="display:flex;gap:5px;">
               {% if t.status != 'Paid' %}
               <form method="POST" action="{{ url_for('mark_paid', tid=t.id) }}" style="display:inline;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-success btn-sm"><i class="bi bi-check-lg"></i></button>
               </form>{% endif %}
               <a href="{{ url_for('edit_renter', tid=t.id) }}" class="btn btn-ghost btn-sm"><i class="bi bi-pencil"></i></a>
@@ -188,7 +184,7 @@
 document.addEventListener('DOMContentLoaded', function() {
 
 function loadCharts() {
-  const data    = {{ chart_data | safe }};
+  const data    = {{ chart_data | tojson }};
   const monthly = data.monthly_income || {};
   const labels  = Object.keys(monthly);
   const values  = Object.values(monthly);
@@ -200,7 +196,7 @@ function loadCharts() {
 
   // Per-bar colours: current month = green, past = gold
   const barColors  = labels.map(l => l === todayLabel ? 'rgba(74,222,128,.75)' : 'rgba(232,160,32,.55)');
-  const borderColors = labels.map(l => l === todayLabel ? '#4ade80' : '#C68A3D');
+  const borderColors = labels.map(l => l === todayLabel ? '#4ade80' : '#e8a020');
 
   new Chart(ctx1, {
     type: 'bar',
@@ -225,8 +221,8 @@ function loadCharts() {
             title: t => t[0].label,
             label: c => ' ₹' + c.raw.toLocaleString('en-IN')
           },
-          backgroundColor: '#241F17', borderColor: 'rgba(255,255,255,0.08)',
-          borderWidth: 1, titleColor: '#e8eaf0', bodyColor: '#A79B85', padding: 10
+          backgroundColor: '#1e2535', borderColor: 'rgba(255,255,255,0.08)',
+          borderWidth: 1, titleColor: '#e8eaf0', bodyColor: '#8b93a8', padding: 10
         }
       },
       scales: {
@@ -235,7 +231,7 @@ function loadCharts() {
           suggestedMax: maxVal * 1.15,
           grid: { color: 'rgba(255,255,255,0.05)' },
           ticks: {
-            color: '#5C5344',
+            color: '#4a5168',
             callback: v => v === 0 ? '₹0' : '₹' + (v >= 100000 ? (v/100000).toFixed(1)+'L' : (v/1000).toFixed(0)+'k')
           },
           border: { display: false }
@@ -243,7 +239,7 @@ function loadCharts() {
         x: {
           grid: { display: false },
           ticks: {
-            color: ctx => ctx.tick.label === todayLabel ? '#4ade80' : '#5C5344',
+            color: ctx => ctx.tick.label === todayLabel ? '#4ade80' : '#4a5168',
             font: ctx => ({ weight: ctx.tick.label === todayLabel ? '700' : '400' })
           },
           border: { display: false }
@@ -282,8 +278,8 @@ function loadCharts() {
               return total > 0 ? '  ' + ((c.raw/total)*100).toFixed(1) + '%' : '';
             }
           },
-          backgroundColor: '#241F17', borderColor: 'rgba(255,255,255,0.08)',
-          borderWidth: 1, titleColor: '#e8eaf0', bodyColor: '#A79B85', padding: 10
+          backgroundColor: '#1e2535', borderColor: 'rgba(255,255,255,0.08)',
+          borderWidth: 1, titleColor: '#e8eaf0', bodyColor: '#8b93a8', padding: 10
         }
       },
       cutout: '62%'
@@ -313,7 +309,7 @@ async function triggerReminders(btn) {
   const orig = btn.innerHTML;
   btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Sending...';
   try {
-    const r = await fetch('/api/trigger-reminders', { method: 'POST', headers: {'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content} });
+    const r = await fetch('/api/trigger-reminders', { method: 'POST' });
     const d = await r.json();
     alert('Reminders sent to ' + d.sent + ' tenant(s).');
   } catch(e) { alert('Error: ' + e.message); }
