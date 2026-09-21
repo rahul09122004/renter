@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import requests
 import secrets
 import smtplib
 import ssl
@@ -202,10 +203,44 @@ VERIFY_TOKEN_MAX_AGE = 60 * 60 * 24      # 24 hours
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Mail (SMTP) — used for email verification & password reset
+# Mail — used for email verification & password reset
+#
+# Two delivery methods, tried in this order:
+#   1. Brevo HTTP API  (BREVO_API_KEY set)  — plain HTTPS POST, no SMTP port/IP
+#      restrictions to fight with. Preferred on hosts like Render where the
+#      outbound IP isn't static.
+#   2. Raw SMTP        (SMTP_HOST + SMTP_FROM set) — classic fallback, works
+#      with any provider.
 # ══════════════════════════════════════════════════════════════════════════════
 def email_configured():
-    return bool(os.environ.get("SMTP_HOST") and os.environ.get("SMTP_FROM"))
+    return bool(os.environ.get("BREVO_API_KEY")) or \
+           bool(os.environ.get("SMTP_HOST") and os.environ.get("SMTP_FROM"))
+
+
+def _brevo_api_send(to, subject, body):
+    api_key = os.environ["BREVO_API_KEY"]
+    sender = os.environ.get("BREVO_SENDER_EMAIL") or os.environ.get("SMTP_FROM")
+    sender_name = os.environ.get("BREVO_SENDER_NAME", "RentManager")
+    if not sender:
+        raise RuntimeError("BREVO_API_KEY is set but no sender email "
+                           "(BREVO_SENDER_EMAIL or SMTP_FROM) is configured.")
+    resp = requests.post(
+        "https://api.brevo.com/v3/smtp/email",
+        headers={
+            "api-key": api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        json={
+            "sender": {"name": sender_name, "email": sender},
+            "to": [{"email": to}],
+            "subject": subject,
+            "textContent": body,
+        },
+        timeout=15,
+    )
+    if resp.status_code >= 300:
+        raise RuntimeError(f"Brevo API error {resp.status_code}: {resp.text[:300]}")
 
 
 def _smtp_send(msg):
@@ -231,9 +266,10 @@ def send_email(to, subject, body):
     """Fire-and-forget so response time doesn't reveal whether an account exists.
 
     * test env        → captured in ``app.extensions['outbox']``
-    * SMTP configured → sent from a background thread
+    * BREVO_API_KEY set → sent via Brevo's HTTPS API, from a background thread
+    * SMTP configured → sent via raw SMTP, from a background thread
     * development     → message (incl. link) printed to the console
-    * production, no SMTP → NOT logged (links are credentials), event recorded
+    * production, no mailer → NOT logged (links are credentials), event recorded
     """
     app = current_app._get_current_object()
     if app.config.get("TESTING"):
@@ -242,23 +278,28 @@ def send_email(to, subject, body):
         return True
     if not email_configured():
         if is_development():
-            logger.info("DEV EMAIL (SMTP not configured)\n  To: %s\n  Subject: %s\n%s",
+            logger.info("DEV EMAIL (mailer not configured)\n  To: %s\n  Subject: %s\n%s",
                         to, subject, body)
         else:
-            security_log("email_not_sent_smtp_unconfigured", level="warning")
+            security_log("email_not_sent_mailer_unconfigured", level="warning")
         return False
 
-    msg = EmailMessage()
-    msg["From"] = os.environ["SMTP_FROM"]
-    msg["To"] = to
-    msg["Subject"] = subject
-    msg.set_content(body)
+    use_brevo_api = bool(os.environ.get("BREVO_API_KEY"))
 
     def _worker():
         try:
-            _smtp_send(msg)
+            if use_brevo_api:
+                _brevo_api_send(to, subject, body)
+            else:
+                msg = EmailMessage()
+                msg["From"] = os.environ["SMTP_FROM"]
+                msg["To"] = to
+                msg["Subject"] = subject
+                msg.set_content(body)
+                _smtp_send(msg)
         except Exception as ex:                          # noqa: BLE001
-            logger.error("SMTP send failed: %s", type(ex).__name__)
+            logger.error("Email send failed (%s): %s",
+                        "brevo_api" if use_brevo_api else "smtp", type(ex).__name__)
 
     threading.Thread(target=_worker, daemon=True).start()
     return True
@@ -469,8 +510,9 @@ def _log_startup_warnings(app):
                        "effective limit is multiplied — set RATELIMIT_STORAGE_URI=redis://… "
                        "for shared, accurate limits. (Account lockout is DB-backed and unaffected.)")
     if not email_configured():
-        logger.warning("SMTP is not configured: email verification and password reset "
-                       "emails cannot be sent. Set SMTP_HOST/SMTP_FROM/… (see .env.example).")
+        logger.warning("No mailer configured: email verification and password reset "
+                       "emails cannot be sent. Set BREVO_API_KEY (+ BREVO_SENDER_EMAIL) "
+                       "or SMTP_HOST/SMTP_FROM/… (see .env.example).")
     if str(app.config["SQLALCHEMY_DATABASE_URI"]).startswith("sqlite"):
         logger.warning("Running production on SQLite. Data may be lost on redeploy and the "
                        "file offers no network access control — use PostgreSQL (DATABASE_URL).")

@@ -29,6 +29,12 @@ services:
       - key: PUBLIC_BASE_URL
         sync: false
       # Email (verification + password reset)
+      # Preferred: Brevo HTTPS API (avoids SMTP port/IP-allowlist issues on Render)
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      # Fallback / alternative: raw SMTP (used only if BREVO_API_KEY is not set)
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
