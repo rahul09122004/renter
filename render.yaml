@@ -24,7 +24,7 @@ services:
         sync: false
       # Who may self-register: closed (default) | invite | open
       - key: SIGNUP_MODE
-        value: closed
+        value: open
       # e.g. https://your-app.onrender.com  (used for links in emails)
       - key: PUBLIC_BASE_URL
         sync: false
