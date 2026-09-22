@@ -8,7 +8,7 @@ Everything cross-cutting lives here so it is reviewable in one place:
   * CSRF protection (Flask-WTF) and rate limiting / abuse control (Flask-Limiter)
   * security response headers (CSP, frame, sniffing, referrer …)
   * structured security-event logging + abnormal-traffic detection
-  * password hashing, signed one-time tokens, SMTP mailer
+  * password hashing, signed one-time tokens
   * generic error handlers that never leak internals
 
 Nothing in here imports ``app`` or ``models`` at import time (no cycles).
@@ -18,15 +18,11 @@ import json
 import logging
 import os
 import re
-import requests
 import secrets
-import smtplib
-import ssl
 import threading
 import time
 import uuid
 from collections import defaultdict, deque
-from email.message import EmailMessage
 from urllib.parse import urlparse
 
 from flask import (current_app, flash, g, jsonify, redirect, render_template,
@@ -175,6 +171,49 @@ def burn_password_check(password):
     check_password_hash(_DUMMY_HASH, password or "")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Security question — used instead of email for account recovery
+# ══════════════════════════════════════════════════════════════════════════════
+SECURITY_QUESTIONS = [
+    "What was the name of your first pet?",
+    "What is your mother's maiden name?",
+    "What city were you born in?",
+    "What was the name of your first school?",
+    "What is your favourite childhood nickname?",
+]
+
+
+def _normalize_answer(answer):
+    """Case/whitespace-insensitive so a genuine answer typed differently still matches."""
+    return re.sub(r"\s+", " ", (answer or "").strip().lower())
+
+
+def hash_security_answer(answer):
+    return hash_password(_normalize_answer(answer))
+
+
+def verify_security_answer(stored_hash, answer):
+    try:
+        return bool(stored_hash) and check_password_hash(stored_hash, _normalize_answer(answer))
+    except Exception:                          # malformed hash → treat as mismatch
+        return False
+
+
+_DUMMY_ANSWER_HASH = hash_security_answer(secrets.token_hex(16))
+
+
+def burn_security_answer_check(answer):
+    """Equalises timing whether or not the account/question exists."""
+    check_password_hash(_DUMMY_ANSWER_HASH, _normalize_answer(answer))
+
+
+def dummy_security_question(username):
+    """A question that's always the same for a given (unknown) username, so the
+    forgot-password page looks identical whether or not the account exists."""
+    idx = int(hashlib.sha256((username or "").encode()).hexdigest(), 16) % len(SECURITY_QUESTIONS)
+    return SECURITY_QUESTIONS[idx]
+
+
 def _serializer(purpose):
     return URLSafeTimedSerializer(current_app.secret_key, salt=f"rentmanager:{purpose}")
 
@@ -193,116 +232,7 @@ def read_token(purpose, token, max_age):
         return None
 
 
-def password_fingerprint(admin):
-    """Changes whenever the password changes → reset links become single-use."""
-    return hashlib.sha256((admin.password_hash or "").encode()).hexdigest()[:24]
-
-
-RESET_TOKEN_MAX_AGE = 60 * 60            # 1 hour
-VERIFY_TOKEN_MAX_AGE = 60 * 60 * 24      # 24 hours
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Mail — used for email verification & password reset
-#
-# Two delivery methods, tried in this order:
-#   1. Brevo HTTP API  (BREVO_API_KEY set)  — plain HTTPS POST, no SMTP port/IP
-#      restrictions to fight with. Preferred on hosts like Render where the
-#      outbound IP isn't static.
-#   2. Raw SMTP        (SMTP_HOST + SMTP_FROM set) — classic fallback, works
-#      with any provider.
-# ══════════════════════════════════════════════════════════════════════════════
-def email_configured():
-    return bool(os.environ.get("BREVO_API_KEY")) or \
-           bool(os.environ.get("SMTP_HOST") and os.environ.get("SMTP_FROM"))
-
-
-def _brevo_api_send(to, subject, body):
-    api_key = os.environ["BREVO_API_KEY"]
-    sender = os.environ.get("BREVO_SENDER_EMAIL") or os.environ.get("SMTP_FROM")
-    sender_name = os.environ.get("BREVO_SENDER_NAME", "RentManager")
-    if not sender:
-        raise RuntimeError("BREVO_API_KEY is set but no sender email "
-                           "(BREVO_SENDER_EMAIL or SMTP_FROM) is configured.")
-    resp = requests.post(
-        "https://api.brevo.com/v3/smtp/email",
-        headers={
-            "api-key": api_key,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        json={
-            "sender": {"name": sender_name, "email": sender},
-            "to": [{"email": to}],
-            "subject": subject,
-            "textContent": body,
-        },
-        timeout=15,
-    )
-    if resp.status_code >= 300:
-        raise RuntimeError(f"Brevo API error {resp.status_code}: {resp.text[:300]}")
-
-
-def _smtp_send(msg):
-    host = os.environ["SMTP_HOST"]
-    port = env_int("SMTP_PORT", 587)
-    user = os.environ.get("SMTP_USER", "")
-    pwd = os.environ.get("SMTP_PASSWORD", "")
-    ctx = ssl.create_default_context()
-    if port == 465:
-        with smtplib.SMTP_SSL(host, port, timeout=15, context=ctx) as s:
-            if user:
-                s.login(user, pwd)
-            s.send_message(msg)
-    else:
-        with smtplib.SMTP(host, port, timeout=15) as s:
-            s.starttls(context=ctx)                     # never send credentials in clear
-            if user:
-                s.login(user, pwd)
-            s.send_message(msg)
-
-
-def send_email(to, subject, body):
-    """Fire-and-forget so response time doesn't reveal whether an account exists.
-
-    * test env        → captured in ``app.extensions['outbox']``
-    * BREVO_API_KEY set → sent via Brevo's HTTPS API, from a background thread
-    * SMTP configured → sent via raw SMTP, from a background thread
-    * development     → message (incl. link) printed to the console
-    * production, no mailer → NOT logged (links are credentials), event recorded
-    """
-    app = current_app._get_current_object()
-    if app.config.get("TESTING"):
-        app.extensions.setdefault("outbox", []).append(
-            {"to": to, "subject": subject, "body": body})
-        return True
-    if not email_configured():
-        if is_development():
-            logger.info("DEV EMAIL (mailer not configured)\n  To: %s\n  Subject: %s\n%s",
-                        to, subject, body)
-        else:
-            security_log("email_not_sent_mailer_unconfigured", level="warning")
-        return False
-
-    use_brevo_api = bool(os.environ.get("BREVO_API_KEY"))
-
-    def _worker():
-        try:
-            if use_brevo_api:
-                _brevo_api_send(to, subject, body)
-            else:
-                msg = EmailMessage()
-                msg["From"] = os.environ["SMTP_FROM"]
-                msg["To"] = to
-                msg["Subject"] = subject
-                msg.set_content(body)
-                _smtp_send(msg)
-        except Exception as ex:                          # noqa: BLE001
-            logger.error("Email send failed (%s): %s",
-                        "brevo_api" if use_brevo_api else "smtp", type(ex).__name__)
-
-    threading.Thread(target=_worker, daemon=True).start()
-    return True
+RESET_TOKEN_MAX_AGE = 60 * 60            # 1 hour — binds forgot-password's step 1 to step 2
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -370,8 +300,7 @@ limiter = Limiter(key_func=user_or_ip, headers_enabled=True)
 LIMITS = {
     "login":        "10 per minute;40 per hour",
     "signup":       "5 per hour;15 per day",
-    "email_flow":   "5 per hour;15 per day",      # forgot-password / resend-verification (per IP)
-    "email_target": "3 per hour",                 # …and per target email
+    "email_flow":   "5 per hour;15 per day",      # forgot-password (per IP)
     "ocr":          "10 per minute;100 per hour", # paid third-party OCR call
     "reminder":     "20 per hour;60 per day",     # WhatsApp/SMS cost money & annoy tenants
     "excel_import": "10 per hour",
@@ -509,10 +438,6 @@ def _log_startup_warnings(app):
         logger.warning("Rate limits use per-process memory. With several gunicorn workers the "
                        "effective limit is multiplied — set RATELIMIT_STORAGE_URI=redis://… "
                        "for shared, accurate limits. (Account lockout is DB-backed and unaffected.)")
-    if not email_configured():
-        logger.warning("No mailer configured: email verification and password reset "
-                       "emails cannot be sent. Set BREVO_API_KEY (+ BREVO_SENDER_EMAIL) "
-                       "or SMTP_HOST/SMTP_FROM/… (see .env.example).")
     if str(app.config["SQLALCHEMY_DATABASE_URI"]).startswith("sqlite"):
         logger.warning("Running production on SQLite. Data may be lost on redeploy and the "
                        "file offers no network access control — use PostgreSQL (DATABASE_URL).")
@@ -571,7 +496,7 @@ def _register_hooks(app):
         if request.is_secure or is_production():
             h.setdefault("Strict-Transport-Security", "max-age=31536000")
         # The password-reset URL carries a secret token: never leak it via Referer.
-        if request.endpoint in ("reset_password", "verify_email"):
+        if request.endpoint == "reset_password":
             h["Referrer-Policy"] = "no-referrer"
         h["X-Request-ID"] = getattr(g, "request_id", "-")
         return resp
@@ -658,7 +583,3 @@ def signup_mode():
     if mode in ("open", "invite", "closed"):
         return mode
     return "closed" if is_production() else "open"
-
-
-def email_verification_required():
-    return env_bool("REQUIRE_EMAIL_VERIFICATION", True)

@@ -53,7 +53,6 @@ A full-featured, production-ready rent management platform for multi-unit proper
 - Open your Render URL
 - **Login:** `admin` / the password from `ADMIN_PASSWORD` — or, if you left it blank, the **one-time password printed in the deploy log** (search for `One-time password`). You will be forced to choose a new password at first login.
 - Go to **Settings → Change Username** to customize (optional)
-- Configure SMTP (see `SECURITY.md`) so email verification / password reset work
 
 ---
 
@@ -225,7 +224,7 @@ Quick checklist for production:
 - `APP_ENV=production` (default) and a strong `SECRET_KEY` (the app won't boot without it)
 - `DATABASE_URL` = PostgreSQL over TLS, ideally the provider's *private/internal* URL
 - Run `docs/supabase_lockdown.sql` if you use Supabase (or leave `DB_ENABLE_RLS` on)
-- Configure SMTP; keep `SIGNUP_MODE=closed` unless you really want public registration
+- Keep `SIGNUP_MODE=closed` unless you really want public registration
 - Forgot the admin password? `flask --app app set-password admin`
 
 ---
@@ -296,9 +295,9 @@ These run automatically on Render/local deployment:
 - `GET/POST /login` — Admin login
 - `POST /logout` — Logout (POST + CSRF token only)
 - `GET/POST /signup` — Registration (`SIGNUP_MODE`: closed/invite/open)
-- `GET /verify-email/<token>`, `GET/POST /resend-verification` — Email verification
-- `GET/POST /forgot-password`, `GET/POST /reset-password/<token>` — Password reset (1-hour, single-use links)
-- `GET/POST /change-password`, `POST /change-username` — Account settings
+- `GET/POST /forgot-password` — Look up account by username, shows security question
+- `POST /reset-password/<token>` — Answer security question + set new password (1-hour token)
+- `GET/POST /change-password`, `POST /change-username`, `POST /change-security-question` — Account settings
 - `GET /files/<key>` — Authenticated download of uploaded documents (files are no longer public under `/static`)
 
 ### Dashboard & Tracking

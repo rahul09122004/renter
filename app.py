@@ -300,14 +300,6 @@ def _now():
     return datetime.utcnow()
 
 
-def _public_url(endpoint, **values):
-    """Absolute link for emails. Uses PUBLIC_BASE_URL (or Render's own URL) so a
-    forged Host header can't poison password-reset links."""
-    base = (os.environ.get("PUBLIC_BASE_URL") or os.environ.get("RENDER_EXTERNAL_URL")
-            or request.host_url).rstrip("/")
-    return base + url_for(endpoint, **values)
-
-
 def _start_session(admin):
     session.clear()                          # new session id → no fixation
     session.permanent = True                 # bounded by PERMANENT_SESSION_LIFETIME
@@ -322,23 +314,6 @@ def _start_session(admin):
     admin.locked_until = None
     db.session.commit()
     g._current_user = admin
-
-
-def _send_verification_email(admin):
-    token = sec.make_token("verify-email", {"uid": admin.id, "email": admin.email})
-    link = _public_url("verify_email", token=token)
-    sec.send_email(admin.email, "Verify your RentManager email",
-        f"Hi {admin.display_name()},\n\nConfirm your email address to activate your account:\n\n{link}\n\n"
-        "This link expires in 24 hours. If you didn't create this account, ignore this message.\n")
-
-
-def _send_reset_email(admin):
-    token = sec.make_token("reset-password", {"uid": admin.id, "pv": sec.password_fingerprint(admin)})
-    link = _public_url("reset_password", token=token)
-    sec.send_email(admin.email, "Reset your RentManager password",
-        f"Hi {admin.display_name()},\n\nUse this link to choose a new password:\n\n{link}\n\n"
-        "It expires in 1 hour and works once. If you didn't ask for this, ignore this "
-        "message — your password has not changed.\n")
 
 
 def _set_password(admin, new_password, must_change=False):
@@ -399,11 +374,6 @@ def login():
         sec.security_log("login_denied_disabled", level="warning", user=username)
         flash("This account has been disabled. Contact the administrator.", "danger")
         return render_template("login.html"), 403
-    if sec.email_verification_required() and not admin.email_verified:
-        sec.security_log("login_denied_unverified", level="info", user=username)
-        flash("Please verify your email first — check your inbox for the link.", "warning")
-        return render_template("login.html", show_resend=True), 403
-
     if sec.password_needs_rehash(admin.password_hash):   # transparently upgrade old hashes
         admin.password_hash = sec.hash_password(password)
     _start_session(admin)
@@ -423,12 +393,14 @@ def signup():
     if request.method == "GET":
         if current_user():
             return redirect(url_for("dashboard"))
-        return render_template("signup.html", form={}, invite=(mode == "invite"))
+        return render_template("signup.html", form={}, invite=(mode == "invite"),
+                               security_questions=sec.SECURITY_QUESTIONS)
 
     form = request.form
     if sec.honeypot_tripped():
         sec.security_log("honeypot_triggered", level="warning", form="signup")
-        return render_template("check_email.html"), 200      # tell the bot nothing
+        flash("Account created. You can sign in now.", "success")   # tell the bot nothing
+        return redirect(url_for("login"))
     errors = []
     if mode == "invite":
         expected = os.environ.get("SIGNUP_INVITE_CODE", "")
@@ -452,23 +424,30 @@ def signup():
         errors.append("Passwords do not match.")
     if username and unscoped(Admin.query).filter(db.func.lower(Admin.username) == username).first():
         errors.append("That username is already taken.")
-    need_verify = sec.email_verification_required()
-    if need_verify and not (sec.email_configured() or sec.is_development() or sec.is_test()):
-        errors.append("Email delivery is not configured on this server, so accounts can't be "
-                      "verified. Ask the administrator to create your account.")
+    security_question = (form.get("security_question") or "").strip()
+    security_answer = (form.get("security_answer") or "").strip()
+    if security_question not in sec.SECURITY_QUESTIONS:
+        errors.append("Choose a security question.")
+    if len(security_answer) < 2:
+        errors.append("Enter an answer to your security question — you'll need it if you "
+                      "ever forget your password.")
     if errors:
         for e in errors:
             flash(e, "danger")
-        return render_template("signup.html", form=form, invite=(mode == "invite")), 400
+        return render_template("signup.html", form=form, invite=(mode == "invite"),
+                               security_questions=sec.SECURITY_QUESTIONS), 400
 
     # Same response whether or not the email is already registered (no enumeration).
     if unscoped(Admin.query).filter(db.func.lower(Admin.email) == email).first():
         sec.security_log("signup_duplicate_email", level="info")
-        return render_template("check_email.html")
+        flash("Account created. You can sign in now.", "success")
+        return redirect(url_for("login"))
     try:
         admin = Admin(username=username, password_hash=sec.hash_password(password),
                       full_name=full_name, email=email, property_name=property_name,
-                      role="owner", is_active=True, email_verified=not need_verify,
+                      role="owner", is_active=True, email_verified=True,
+                      security_question=security_question,
+                      security_answer_hash=sec.hash_security_answer(security_answer),
                       password_changed_at=_now())
         db.session.add(admin)
         db.session.commit()
@@ -476,91 +455,79 @@ def signup():
         db.session.rollback()
         app.logger.exception("signup failed")
         flash("Could not create the account. Please try again.", "danger")
-        return render_template("signup.html", form=form, invite=(mode == "invite")), 500
+        return render_template("signup.html", form=form, invite=(mode == "invite"),
+                               security_questions=sec.SECURITY_QUESTIONS), 500
     sec.security_log("signup", user=username)
-    if need_verify:
-        _send_verification_email(admin)
-        return render_template("check_email.html")
     _start_session(admin)
     flash("Account created. This workspace starts empty — add your first renter to begin.", "success")
     return redirect(url_for("renters"))
 
 
-@app.route("/verify-email/<token>")
-def verify_email(token):
-    data = sec.read_token("verify-email", token, sec.VERIFY_TOKEN_MAX_AGE)
-    admin = unscoped(Admin.query).filter_by(id=data["uid"]).first() if data else None
-    if not admin or (admin.email or "").lower() != (data.get("email") or "").lower():
-        sec.security_log("verify_email_invalid", level="warning")
-        flash("That verification link is invalid or has expired. Request a new one below.", "danger")
-        return redirect(url_for("resend_verification"))
-    admin.email_verified = True
-    db.session.commit()
-    sec.security_log("email_verified", user=admin.username)
-    flash("Email verified. You can sign in now.", "success")
-    return redirect(url_for("login"))
-
-
-def _email_flow(template, send_fn, only_verified):
-    """Shared handler for forgot-password / resend-verification.
-
-    Always returns the same page regardless of whether the email exists.
-    """
-    if request.method == "GET":
-        return render_template(template)
-    if sec.honeypot_tripped():
-        sec.security_log("honeypot_triggered", level="warning", form=template)
-        return render_template("check_email.html")
-    try:
-        email = clean_email(request.form.get("email"), required=True).lower()
-    except ValidationError as e:
-        flash(str(e), "danger")
-        return render_template(template), 400
-    admin = unscoped(Admin.query).filter(db.func.lower(Admin.email) == email).first()
-    if admin and admin.is_active and (bool(admin.email_verified) == only_verified):
-        send_fn(admin)
-        sec.security_log(template.replace(".html", "") + "_sent", user=admin.username)
-    else:
-        sec.security_log(template.replace(".html", "") + "_no_match", level="info")
-    return render_template("check_email.html")
-
-
-@app.route("/resend-verification", methods=["GET", "POST"])
-@sec.limiter.limit(LIMITS["email_flow"], methods=["POST"], key_func=get_remote_address)
-@sec.limiter.limit(LIMITS["email_target"], methods=["POST"], key_func=sec.form_field_key("email"))
-def resend_verification():
-    return _email_flow("resend_verification.html", _send_verification_email, only_verified=False)
+def _security_reset_token(uid):
+    return sec.make_token("security-reset", {"uid": uid})
 
 
 @app.route("/forgot-password", methods=["GET", "POST"])
 @sec.limiter.limit(LIMITS["email_flow"], methods=["POST"], key_func=get_remote_address)
-@sec.limiter.limit(LIMITS["email_target"], methods=["POST"], key_func=sec.form_field_key("email"))
+@sec.limiter.limit(LIMITS["email_flow"], methods=["POST"], key_func=sec.form_field_key("username"))
 def forgot_password():
-    return _email_flow("forgot_password.html", _send_reset_email, only_verified=True)
+    """Step 1: look up the account by username and show its security question.
+
+    The page looks identical whether or not the account exists — an unknown
+    username gets a deterministic decoy question, and the token it produces
+    can never pass step 2 — so this doesn't reveal which usernames are real.
+    """
+    if request.method == "GET":
+        return render_template("forgot_password.html")
+    if sec.honeypot_tripped():
+        sec.security_log("honeypot_triggered", level="warning", form="forgot_password")
+        return render_template("forgot_password.html")
+    username = (request.form.get("username") or "").strip().lower()[:80]
+    admin = unscoped(Admin.query).filter(db.func.lower(Admin.username) == username).first()
+    if admin and admin.is_active and admin.security_question and admin.security_answer_hash:
+        question = admin.security_question
+        token = _security_reset_token(admin.id)
+        sec.security_log("forgot_password_started", user=username)
+    else:
+        question = sec.dummy_security_question(username)
+        token = _security_reset_token(None)      # can never verify → dead end
+        sec.security_log("forgot_password_no_match", level="info")
+    return render_template("reset_password.html", token=token, question=question)
 
 
-@app.route("/reset-password/<token>", methods=["GET", "POST"])
+@app.route("/reset-password/<token>", methods=["POST"])
 @sec.limiter.limit(LIMITS["login"], methods=["POST"], key_func=get_remote_address)
 def reset_password(token):
-    data = sec.read_token("reset-password", token, sec.RESET_TOKEN_MAX_AGE)
-    admin = unscoped(Admin.query).filter_by(id=data["uid"]).first() if data else None
-    # pv binds the token to the CURRENT password hash → single use.
-    if not admin or not admin.is_active or data.get("pv") != sec.password_fingerprint(admin):
+    """Step 2: answer the security question and choose a new password."""
+    data = sec.read_token("security-reset", token, sec.RESET_TOKEN_MAX_AGE)
+    uid = data.get("uid") if data else None
+    admin = unscoped(Admin.query).filter_by(id=uid).first() if uid else None
+    answer = request.form.get("security_answer", "")
+    pw, confirm = request.form.get("password", ""), request.form.get("confirm_password", "")
+
+    if not admin or not admin.is_active or not admin.security_answer_hash:
+        sec.burn_security_answer_check(answer)          # equalise timing
         sec.security_log("reset_token_invalid", level="warning")
-        flash("That reset link is invalid, already used, or has expired.", "danger")
+        flash("That didn't match, or the link has expired. Start over below.", "danger")
         return redirect(url_for("forgot_password"))
-    if request.method == "POST":
-        pw, confirm = request.form.get("password", ""), request.form.get("confirm_password", "")
-        msg = check_password_strength(pw, admin.username, admin.email or "")
-        if msg or pw != confirm:
-            flash(msg or "Passwords do not match.", "danger")
-            return render_template("reset_password.html", token=token), 400
-        _set_password(admin, pw)
-        db.session.commit()
-        sec.security_log("password_reset_completed", user=admin.username)
-        flash("Password updated. Sign in with your new password.", "success")
-        return redirect(url_for("login"))
-    return render_template("reset_password.html", token=token)
+
+    if not sec.verify_security_answer(admin.security_answer_hash, answer):
+        sec.security_log("reset_answer_wrong", level="warning", user=admin.username)
+        flash("That answer doesn't match what we have on file. Try again.", "danger")
+        return render_template("reset_password.html", token=token,
+                               question=admin.security_question), 401
+
+    msg = check_password_strength(pw, admin.username, admin.email or "")
+    if msg or pw != confirm:
+        flash(msg or "Passwords do not match.", "danger")
+        return render_template("reset_password.html", token=token,
+                               question=admin.security_question), 400
+
+    _set_password(admin, pw)
+    db.session.commit()
+    sec.security_log("password_reset_completed", user=admin.username)
+    flash("Password updated. Sign in with your new password.", "success")
+    return redirect(url_for("login"))
 
 
 # ── USER MANAGEMENT (super admin only) ───────────────────────────────────────
@@ -2123,7 +2090,7 @@ def change_password():
             sec.security_log("password_changed", user=admin.username)
             flash("Password changed. Other devices have been signed out.", "success")
             return redirect(url_for("dashboard"))
-    return render_template("change_password.html")
+    return render_template("change_password.html", security_questions=sec.SECURITY_QUESTIONS)
 
 @app.route("/change-username", methods=["POST"])
 @sec.limiter.limit("10 per hour")
@@ -2148,6 +2115,31 @@ def change_username():
         session["admin_username"] = new_username
         sec.security_log("username_changed", old=old, new=new_username)
         flash(f"Username changed to '{new_username}'.", "success")
+        return redirect(url_for("dashboard"))
+    return redirect(url_for("change_password"))
+
+
+@app.route("/change-security-question", methods=["POST"])
+@sec.limiter.limit("10 per hour")
+@login_required
+def change_security_question():
+    admin = current_user()
+    question = (request.form.get("security_question") or "").strip()
+    answer = (request.form.get("security_answer") or "").strip()
+    current = request.form.get("confirm_password_secq", "")
+    if not sec.verify_password(admin.password_hash, current):
+        sec.security_log("security_question_change_failed", level="warning", reason="bad_password")
+        flash("Incorrect password — security question not changed.", "danger")
+    elif question not in sec.SECURITY_QUESTIONS:
+        flash("Choose one of the listed security questions.", "danger")
+    elif len(answer) < 2:
+        flash("Enter an answer to your security question.", "danger")
+    else:
+        admin.security_question = question
+        admin.security_answer_hash = sec.hash_security_answer(answer)
+        db.session.commit()
+        sec.security_log("security_question_changed", user=admin.username)
+        flash("Security question updated.", "success")
         return redirect(url_for("dashboard"))
     return redirect(url_for("change_password"))
 

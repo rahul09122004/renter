@@ -368,7 +368,7 @@
 <body>
 
 {# ── AUTH PAGES: no sidebar ── #}
-{% if request.endpoint in ['login', 'signup', 'forgot_password', 'reset_password', 'resend_verification', 'check_email'] %}
+{% if request.endpoint in ['login', 'signup', 'forgot_password', 'reset_password'] %}
   {% block auth_content %}{% endblock %}
 
 {# ── ALL OTHER PAGES ── #}

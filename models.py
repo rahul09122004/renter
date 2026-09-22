@@ -347,6 +347,9 @@ class Admin(db.Model):
     failed_logins        = db.Column(db.Integer, default=0)
     locked_until         = db.Column(db.DateTime, nullable=True)
     password_changed_at  = db.Column(db.DateTime, nullable=True)
+    # ── account recovery (no email/SMTP involved) ───────────────────────────
+    security_question    = db.Column(db.String(160), nullable=True)
+    security_answer_hash = db.Column(db.String(200), nullable=True)
 
     def is_superadmin(self):
         return (self.role or "").lower() == "superadmin"
@@ -593,6 +596,8 @@ def init_db(app):
                 ("failed_logins",        "INTEGER DEFAULT 0"),
                 ("locked_until",         "TIMESTAMP"),
                 ("password_changed_at",  "TIMESTAMP"),
+                ("security_question",      "VARCHAR(160)"),
+                ("security_answer_hash",   "VARCHAR(200)"),
             ]
             with db.engine.connect() as conn:
                 for tbl in owned_tables:

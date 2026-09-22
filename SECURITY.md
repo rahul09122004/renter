@@ -74,10 +74,11 @@ Cloudflare Turnstile/hCaptcha on `/signup` if you open registration publicly.
 * Sessions: HttpOnly + SameSite=Lax + Secure cookies, 8 h absolute lifetime, 60 min idle timeout,
   **server-side revocation** via `session_version` (password change/reset/disable signs out every device),
   role and `is_active` re-checked from the DB on every request, session id renewed at login.
-* Email verification (24 h link) required before sign-in; password reset links expire in **1 hour**,
-  work **once** (bound to the current password hash) and are sent with `Referrer-Policy: no-referrer`.
-  Responses never reveal whether an email/username exists; unknown users cost the same time as wrong passwords.
-  Links use `PUBLIC_BASE_URL` (or Render's URL), never the request `Host` header (host-header poisoning).
+* Account recovery uses a security question set at signup (answer hashed, case/whitespace-insensitive
+  match) instead of email/SMTP. Reset tokens expire in **1 hour** and are sent with
+  `Referrer-Policy: no-referrer`. An unknown username gets a deterministic decoy question instead of a
+  reset dead-end, so responses never reveal whether a username exists; unknown users cost the same time
+  as a wrong answer.
 * Logout is POST + CSRF. Admin-created accounts get a temporary password that must be changed at first login.
 * Registration is **closed by default in production** (`SIGNUP_MODE=closed|invite|open`) because every account
   shares the deployment's WhatsApp/SMS credentials.
@@ -86,7 +87,7 @@ Cloudflare Turnstile/hCaptcha on `/signup` if you open registration publicly.
 ## Environment variables
 
 See `.env.example`. Security-relevant: `APP_ENV`, `SECRET_KEY`, `ADMIN_PASSWORD`, `SIGNUP_MODE`,
-`SIGNUP_INVITE_CODE`, `REQUIRE_EMAIL_VERIFICATION`, `PUBLIC_BASE_URL`, `SMTP_*`, `TRUSTED_PROXIES`, `FORCE_HTTPS`,
+`SIGNUP_INVITE_CODE`, `TRUSTED_PROXIES`, `FORCE_HTTPS`,
 `RATELIMIT_STORAGE_URI`, `SESSION_LIFETIME_HOURS`, `SESSION_IDLE_MINUTES`, `DB_SSLMODE`, `DB_ENABLE_RLS`, `UPLOAD_DIR`.
 
 ## Known limitations / recommended next steps

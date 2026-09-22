@@ -25,26 +25,6 @@ services:
       # Who may self-register: closed (default) | invite | open
       - key: SIGNUP_MODE
         value: open
-      # e.g. https://your-app.onrender.com  (used for links in emails)
-      - key: PUBLIC_BASE_URL
-        sync: false
-      # Email (verification + password reset)
-      # Preferred: Brevo HTTPS API (avoids SMTP port/IP-allowlist issues on Render)
-      - key: BREVO_API_KEY
-        sync: false
-      - key: BREVO_SENDER_EMAIL
-        sync: false
-      # Fallback / alternative: raw SMTP (used only if BREVO_API_KEY is not set)
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: SMTP_FROM
-        sync: false
       # Integrations (all optional)
       - key: ACCESS_TOKEN
         sync: false
