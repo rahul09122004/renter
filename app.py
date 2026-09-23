@@ -1586,10 +1586,41 @@ def vacate_renter(tid):
             charged  = parse_money(request.form.get("repair_charged"), "Repair charged", allow_blank=True, default=0.0)
             actual   = parse_money(request.form.get("repair_actual"), "Repair actual", allow_blank=True, default=0.0)
             other    = parse_money(request.form.get("other_deduction"), "Other deduction", allow_blank=True, default=0.0)
+            paint_actual = parse_money(request.form.get("painting_actual"), "Painting actual", allow_blank=True, default=0.0)
 
             # Unpaid rent selected for recovery from the deposit
             sel_ids = [int(i) for i in request.form.getlist("unpaid_rent_ids") if str(i).strip().isdigit()]
             sel_recs = [r for r in unpaid_records if r.id in sel_ids]
+
+            # Manually-added unpaid months — for month-to-month renters (or any
+            # month that never got a rent record auto-generated). Each row is
+            # three parallel form fields: month / year / amount.
+            manual_months  = request.form.getlist("manual_month")
+            manual_years   = request.form.getlist("manual_year")
+            manual_amounts = request.form.getlist("manual_amount")
+            existing_rec_ids = {r.id for r in sel_recs}
+            for mm, yy, amt in zip(manual_months, manual_years, manual_amounts):
+                if not (str(mm).strip() and str(yy).strip() and str(amt).strip()):
+                    continue
+                try:
+                    mm_i, yy_i = int(mm), int(yy)
+                except ValueError:
+                    continue
+                if not (1 <= mm_i <= 12) or yy_i < 2000 or yy_i > 2100:
+                    continue
+                amount = parse_money(amt, "Manual unpaid rent amount", allow_blank=True, default=0.0)
+                if amount <= 0:
+                    continue
+                rec = RentRecord.query.filter_by(tenant_id=tid, month=mm_i, year=yy_i).first()
+                if not rec:
+                    rec = RentRecord(tenant_id=tid, tenant_name=t.name, month=mm_i, year=yy_i,
+                                      rent_amount=amount, status="Pending", owner_id=t.owner_id)
+                    db.session.add(rec)
+                    db.session.flush()
+                if rec.id not in existing_rec_ids:
+                    sel_recs.append(rec)
+                    existing_rec_ids.add(rec.id)
+
             unpaid_total = sum(r.rent_amount or 0 for r in sel_recs)
             unpaid_note  = ", ".join(r.cycle_label() for r in sel_recs)
 
@@ -1606,6 +1637,7 @@ def vacate_renter(tid):
             s.repair_actual    = actual
             s.repair_cost      = charged        # keep legacy column in sync
             s.other_deduction  = other
+            s.painting_actual  = paint_actual
             s.unpaid_rent      = unpaid_total
             s.unpaid_rent_ids  = ",".join(str(i) for i in sel_ids)
             s.unpaid_rent_note = unpaid_note
@@ -1669,9 +1701,15 @@ def vacate_renter(tid):
                  f"Charged to tenant ₹{charged:,.0f}; actual spend ₹{actual:,.0f}; "
                  f"margin ₹{charged - actual:,.0f}."),
             )
+            # Log the ACTUAL money spent on painting/cleaning, not the amount
+            # charged to the tenant, so the margin shows up correctly — same
+            # treatment as the repair line above. Falls back to the charged
+            # amount if no actual spend was entered.
             _sync_expense(
-                f"Vacate painting/cleaning - {t.name}", other, "Painting",
-                f"Auto-synced from vacate settlement for tenant {t.name} (ID {t.id}).",
+                f"Vacate painting/cleaning - {t.name}", (paint_actual or other), "Painting",
+                (f"Auto-synced from vacate settlement for tenant {t.name} (ID {t.id}). "
+                 f"Charged to tenant ₹{other:,.0f}; actual spend ₹{paint_actual:,.0f}; "
+                 f"margin ₹{other - paint_actual:,.0f}."),
             )
 
             # Mark tenant as vacated
@@ -1967,9 +2005,17 @@ def unit_analytics():
 
     units = {}
     for t in tenants:
-        key = (t.unit or "").strip() or "Unassigned"
+        unit_type = (t.unit or "").strip()
+        unit_num  = (t.unit_number or "").strip()
+        # Group by the ACTUAL physical unit (type + number), not just the
+        # unit type — so "1BHK #101" and "1BHK #202" show up as separate
+        # units instead of being merged into one "1BHK" row.
+        if unit_num:
+            key = f"{unit_type}#{unit_num}" if unit_type else unit_num
+        else:
+            key = unit_type or "Unassigned"
         u = units.setdefault(key, {
-            "unit": key, "unit_numbers": set(),
+            "unit": unit_type or "Unassigned", "unit_numbers": set(),
             "current_tenant": None, "current_rent": 0.0,
             "occupied": False, "tenant_count": 0, "past_tenants": [],
             "billed": 0.0, "collected": 0.0, "outstanding": 0.0,
@@ -2019,7 +2065,7 @@ def unit_analytics():
         u["avg_monthly"] = round(u["collected"] / u["months_paid"]) if u["months_paid"] else 0
         u["total_earned"] = u["collected"] + u["repair_profit"]
         unit_list.append(u)
-    unit_list.sort(key=lambda x: (-x["collected"], x["unit"]))
+    unit_list.sort(key=lambda x: (-x["collected"], x["unit"], x["unit_numbers"]))
 
     totals = {
         "units": len(unit_list),

@@ -545,6 +545,7 @@ def init_db(app):
                 ("vacate_settlements", "unpaid_rent",      "FLOAT DEFAULT 0"),
                 ("vacate_settlements", "unpaid_rent_ids",  "TEXT"),
                 ("vacate_settlements", "unpaid_rent_note", "TEXT"),
+                ("vacate_settlements", "painting_actual",  "FLOAT DEFAULT 0"),
             ]
             with db.engine.connect() as conn:
                 for table, col, coltype in new_cols:
@@ -742,6 +743,8 @@ class VacateSettlement(OwnedMixin, db.Model):
     # ── Repair margin ("profit from deposit") ──────────────────────────────
     repair_charged   = db.Column(db.Float, default=0.0)  # billed to the tenant
     repair_actual    = db.Column(db.Float, default=0.0)  # actually spent by owner
+    # ── Painting/cleaning actual spend (charged amount is other_deduction) ──
+    painting_actual  = db.Column(db.Float, default=0.0)  # actually spent by owner
     # ── Unpaid rent recovered from the deposit ─────────────────────────────
     unpaid_rent      = db.Column(db.Float, default=0.0)
     unpaid_rent_ids  = db.Column(db.Text, nullable=True) # csv of RentRecord ids
@@ -752,6 +755,10 @@ class VacateSettlement(OwnedMixin, db.Model):
     def repair_profit(self):
         """Margin kept by the owner on repairs (charged − actually spent)."""
         return float(self.repair_charged or 0) - float(self.repair_actual or 0)
+
+    def painting_profit(self):
+        """Margin kept by the owner on painting/cleaning (charged − actually spent)."""
+        return float(self.other_deduction or 0) - float(self.painting_actual or 0)
 
     def total_deductions(self):
         return (float(self.repair_charged or self.repair_cost or 0)
@@ -765,7 +772,9 @@ class VacateSettlement(OwnedMixin, db.Model):
             "repair_charged": self.repair_charged, "repair_actual": self.repair_actual,
             "repair_profit": self.repair_profit(),
             "unpaid_rent": self.unpaid_rent, "unpaid_rent_note": self.unpaid_rent_note or "",
-            "other_deduction": self.other_deduction, "deduction_notes": self.deduction_notes or "",
+            "other_deduction": self.other_deduction, "painting_actual": self.painting_actual,
+            "painting_profit": self.painting_profit(),
+            "deduction_notes": self.deduction_notes or "",
             "return_amount": self.return_amount,
             "settlement_date": self.settlement_date.strftime("%Y-%m-%d") if self.settlement_date else None,
         }

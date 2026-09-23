@@ -69,18 +69,63 @@
           <span id="marginDisplay" style="font-size:1.05rem;font-weight:700;color:#4ade80;">₹0</span>
         </div>
 
-        <div class="form-grid form-grid-2" style="margin-bottom:1.25rem;">
+        <div class="form-grid form-grid-2" style="margin-bottom:.75rem;">
           <div class="form-group">
-            <label>Painting / Cleaning / Other (₹)</label>
+            <label>Painting / Cleaning — Amount Charged to Tenant (₹)</label>
             <input class="form-control" name="other_deduction" type="number" step="0.01" min="0"
               value="{{ settlement.other_deduction if settlement else 0 }}" placeholder="0"
               oninput="calcReturn()" id="otherDeduction">
-            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Wall painting, deep cleaning etc.</div>
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">Deducted from the deposit</div>
           </div>
+          <div class="form-group">
+            <label>Painting / Cleaning — Actual Amount Spent (₹)</label>
+            <input class="form-control" name="painting_actual" type="number" step="0.01" min="0"
+              value="{{ settlement.painting_actual if settlement else 0 }}" placeholder="0"
+              oninput="calcReturn()" id="paintingActual">
+            <div style="font-size:.7rem;color:var(--text-faint);margin-top:3px;">What you really paid the painter / cleaner</div>
+          </div>
+        </div>
+
+        <!-- Painting margin readout -->
+        <div id="paintMarginBox" style="background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.22);border-radius:8px;padding:.65rem .9rem;margin-bottom:1.25rem;display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <i class="bi bi-graph-up-arrow" id="paintMarginIcon" style="color:#4ade80;"></i>
+            <span style="font-size:.82rem;color:var(--text-dim);">Painting margin retained <span style="color:var(--text-faint);">(charged − actually spent)</span></span>
+          </div>
+          <span id="paintMarginDisplay" style="font-size:1.05rem;font-weight:700;color:#4ade80;">₹0</span>
         </div>
 
         <!-- Unpaid rent recovery -->
         <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);margin-bottom:.6rem;">Keep Rent Paid Using Deposit</div>
+
+        <!-- Manual unpaid month entry — for month-to-month renters or any
+             month that never got a rent record generated automatically. -->
+        <div style="border:1px solid var(--border2);border-radius:10px;padding:.6rem .9rem;margin-bottom:.75rem;background:var(--surface2);">
+          <div style="font-size:.76rem;color:var(--text-dim);margin-bottom:.5rem;">
+            <i class="bi bi-calendar-plus" style="margin-right:5px;color:var(--gold);"></i>Add an unpaid month manually <span style="color:var(--text-faint);">(month-to-month renters, or any month with no record)</span>
+          </div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end;">
+            <div class="form-group" style="margin:0;min-width:130px;">
+              <label style="font-size:.7rem;">Month</label>
+              <select class="form-control" id="manualMonth">
+                {% for mnum, mname in [(1,'January'),(2,'February'),(3,'March'),(4,'April'),(5,'May'),(6,'June'),(7,'July'),(8,'August'),(9,'September'),(10,'October'),(11,'November'),(12,'December')] %}
+                <option value="{{ mnum }}" {% if mnum == today.month %}selected{% endif %}>{{ mname }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;width:100px;">
+              <label style="font-size:.7rem;">Year</label>
+              <input class="form-control" type="number" id="manualYear" value="{{ today.year }}" min="2000" max="2100">
+            </div>
+            <div class="form-group" style="margin:0;width:130px;">
+              <label style="font-size:.7rem;">Amount (₹)</label>
+              <input class="form-control" type="number" step="0.01" min="0" id="manualAmount" value="{{ tenant.amount or 0 }}">
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="addManualUnpaidMonth()"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
+          <div id="manualUnpaidList" style="display:flex;flex-direction:column;gap:.3rem;margin-top:.5rem;"></div>
+        </div>
+
         {% if unpaid_records %}
         <div style="border:1px solid var(--border2);border-radius:10px;padding:.6rem .9rem;margin-bottom:1.25rem;background:var(--surface2);">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.5rem;">
@@ -114,7 +159,7 @@
         </div>
         {% else %}
         <div style="border:1px solid var(--border);border-radius:10px;padding:.7rem .9rem;margin-bottom:1.25rem;font-size:.8rem;color:var(--text-faint);">
-          <i class="bi bi-check-circle" style="color:#4ade80;margin-right:6px;"></i>No unpaid rent months for this renter — nothing to recover.
+          <i class="bi bi-check-circle" style="color:#4ade80;margin-right:6px;"></i>No unpaid rent records on file — use "Add an unpaid month manually" above if any months still need to be recovered.
         </div>
         {% endif %}
 
@@ -196,12 +241,53 @@
 const DEPOSIT = {{ deposit_collected }};
 const fmt = n => '\u20B9' + Math.round(n).toLocaleString('en-IN');
 
+const MONTH_NAMES = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+let manualRowSeq = 0;
+
 function unpaidSum() {
   let total = 0;
   document.querySelectorAll('.unpaid-cb:checked').forEach(cb => {
     total += parseFloat(cb.dataset.amount) || 0;
   });
+  document.querySelectorAll('.manual-unpaid-row').forEach(row => {
+    total += parseFloat(row.dataset.amount) || 0;
+  });
   return total;
+}
+
+function addManualUnpaidMonth() {
+  const monthSel = document.getElementById('manualMonth');
+  const yearInp  = document.getElementById('manualYear');
+  const amtInp   = document.getElementById('manualAmount');
+  const month = parseInt(monthSel.value, 10);
+  const year  = parseInt(yearInp.value, 10);
+  const amount = parseFloat(amtInp.value) || 0;
+  if (!month || !year || amount <= 0) { alert('Pick a month, year and an amount greater than 0.'); return; }
+
+  const id = 'manualRow' + (manualRowSeq++);
+  const row = document.createElement('div');
+  row.className = 'manual-unpaid-row';
+  row.id = id;
+  row.dataset.amount = amount;
+  row.style.cssText = 'display:flex;align-items:center;gap:9px;padding:.35rem .5rem;border-radius:7px;font-size:.83rem;background:rgba(232,160,32,.08);';
+  row.innerHTML =
+    '<i class="bi bi-calendar-event" style="color:var(--gold);"></i>' +
+    '<span style="color:var(--text);font-weight:500;min-width:110px;">' + MONTH_NAMES[month] + ' ' + year + '</span>' +
+    '<span style="color:var(--text-faint);font-size:.72rem;flex:1;">added manually</span>' +
+    '<span style="color:#f87171;font-weight:600;">' + fmt(amount) + '</span>' +
+    '<button type="button" class="btn btn-ghost btn-sm" onclick="removeManualRow(\'' + id + '\')" style="padding:.15rem .5rem;"><i class="bi bi-x-lg"></i></button>' +
+    '<input type="hidden" name="manual_month" value="' + month + '">' +
+    '<input type="hidden" name="manual_year" value="' + year + '">' +
+    '<input type="hidden" name="manual_amount" value="' + amount + '">';
+  document.getElementById('manualUnpaidList').appendChild(row);
+  amtInp.value = '{{ tenant.amount or 0 }}';
+  calcReturn();
+}
+
+function removeManualRow(id) {
+  const row = document.getElementById(id);
+  if (row) row.remove();
+  calcReturn();
 }
 
 function toggleAllUnpaid() {
@@ -216,9 +302,22 @@ function calcReturn() {
   const charged = parseFloat(document.getElementById('repairCharged').value) || 0;
   const actual  = parseFloat(document.getElementById('repairActual').value)  || 0;
   const other   = parseFloat(document.getElementById('otherDeduction').value) || 0;
+  const paintActual = parseFloat(document.getElementById('paintingActual').value) || 0;
   const unpaid  = unpaidSum();
   const margin  = charged - actual;
+  const paintMargin = other - paintActual;
   const ret     = Math.max(0, DEPOSIT - charged - other - unpaid);
+
+  const pmColor = paintMargin > 0 ? '#4ade80' : (paintMargin < 0 ? '#f87171' : '#8b93a8');
+  const pmd = document.getElementById('paintMarginDisplay');
+  pmd.textContent = (paintMargin >= 0 ? '+ ' : '\u2212 ') + fmt(Math.abs(paintMargin));
+  pmd.style.color = pmColor;
+  document.getElementById('paintMarginIcon').className =
+    paintMargin < 0 ? 'bi bi-graph-down-arrow' : 'bi bi-graph-up-arrow';
+  document.getElementById('paintMarginIcon').style.color = pmColor;
+  const pBox = document.getElementById('paintMarginBox');
+  pBox.style.background  = paintMargin < 0 ? 'rgba(239,68,68,.07)' : 'rgba(34,197,94,.07)';
+  pBox.style.borderColor = paintMargin < 0 ? 'rgba(239,68,68,.22)' : 'rgba(34,197,94,.22)';
 
   document.getElementById('repairDisplay').textContent = '\u2212 ' + fmt(charged);
   document.getElementById('otherDisplay').textContent  = '\u2212 ' + fmt(other);
