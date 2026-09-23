@@ -11,7 +11,7 @@
 
 {# — Monthly income — #}
 {% set _a = namespace(v=0) %}
-{% for r in rent_records %}{% if r.status == 'Paid' %}{% set _a.v = _a.v + (r.paid_amount or r.rent_amount) %}{% endif %}{% endfor %}
+{% for r in rent_records %}{% if r.status == 'Paid' %}{% set _a.v = _a.v + (r.paid_amount or 0) %}{% endif %}{% endfor %}
 {% set total_income = _a.v %}
 
 {# — Monthly pending — #}
@@ -27,7 +27,7 @@
 
 {# — FY income — #}
 {% set _c = namespace(v=0) %}
-{% for r in fy_records %}{% if r.status == 'Paid' %}{% set _c.v = _c.v + (r.paid_amount or r.rent_amount) %}{% endif %}{% endfor %}
+{% for r in fy_records %}{% if r.status == 'Paid' %}{% set _c.v = _c.v + (r.paid_amount or 0) %}{% endif %}{% endfor %}
 {% set fy_income = _c.v %}
 
 {# — FY deposits — #}
@@ -91,7 +91,7 @@
   <form method="GET" style="display:flex;gap:.5rem;align-items:center;">
     <input type="hidden" name="view" value="year">
     <select name="year" class="form-control" style="width:auto;" onchange="this.form.submit()">
-      {% for y in years %}<option value="{{ y }}" {% if y == sel_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+      {% for y, opt_label in year_options %}<option value="{{ y }}" {% if y == sel_year %}selected{% endif %}>{{ opt_label }}</option>{% endfor %}
     </select>
   </form>
   {% else %}
@@ -158,7 +158,7 @@
                 Rent — {{ r.tenant_name }}{% if r.tenant and r.tenant.unit %} <span style="font-size:.72rem;opacity:.55;">({{ r.tenant.unit }})</span>{% endif %}
                 <span style="font-size:.68rem;color:var(--text-faint);display:block;">{{ r.payment_date.strftime("%d %b %Y") if r.payment_date else "—" }}</span>
               </td>
-              <td style="text-align:right;color:#4ade80;font-weight:500;">₹{{ "{:,.0f}".format(r.paid_amount or r.rent_amount) }}</td>
+              <td style="text-align:right;color:#4ade80;font-weight:500;">₹{{ "{:,.0f}".format(r.paid_amount or 0) }}</td>
             </tr>
             {% endif %}{% endfor %}
             {% if total_income == 0 %}
@@ -327,9 +327,9 @@
             <td style="font-family:monospace;font-size:.75rem;color:var(--text-faint);white-space:nowrap;">{{ r.payment_date.strftime("%Y-%m-%d") if r.payment_date else "—" }}</td>
             <td><span style="background:var(--green-bg);color:#4ade80;padding:.15rem .55rem;border-radius:4px;font-size:.72rem;border:1px solid rgba(34,197,94,.2);font-weight:500;">RENT_PAID</span></td>
             <td style="color:var(--text-dim);font-size:.82rem;">{{ r.tenant_name }}</td>
-            <td style="text-align:right;color:#4ade80;font-size:.82rem;font-weight:500;">₹{{ "{:,.0f}".format(r.paid_amount or r.rent_amount) }}</td>
+            <td style="text-align:right;color:#4ade80;font-size:.82rem;font-weight:500;">₹{{ "{:,.0f}".format(r.paid_amount or 0) }}</td>
             <td style="color:var(--text-faint);font-size:.78rem;">admin</td>
-            <td style="font-family:monospace;font-size:.68rem;color:var(--text-faint);" class="hash-cell" data-seed="{{ r.id }}{{ r.paid_amount or r.rent_amount }}{{ en.n }}">—</td>
+            <td style="font-family:monospace;font-size:.68rem;color:var(--text-faint);" class="hash-cell" data-seed="{{ r.id }}{{ r.paid_amount or 0 }}{{ en.n }}">—</td>
           </tr>
           {% set en.n = en.n + 1 %}
           {% endif %}{% endfor %}
@@ -460,7 +460,7 @@
           {% set tp = namespace(paid=0, cnt=0, pend=0) %}
           {% for r in fy_records %}
             {% if r.tenant_name == t.name %}
-              {% if r.status == 'Paid' %}{% set tp.paid = tp.paid + (r.paid_amount or r.rent_amount) %}{% set tp.cnt = tp.cnt + 1 %}{% endif %}
+              {% if r.status == 'Paid' %}{% set tp.paid = tp.paid + (r.paid_amount or 0) %}{% set tp.cnt = tp.cnt + 1 %}{% endif %}
               {% if r.status != 'Paid' %}{% set tp.pend = tp.pend + r.rent_amount %}{% endif %}
             {% endif %}
           {% endfor %}
@@ -513,7 +513,7 @@ const LEDGER_DATA = [
   {% for r in rent_records %}{% if r.status == 'Paid' %}
   {date: {{ (r.payment_date.strftime('%d %b %Y') if r.payment_date else '—') | tojson }},
    particulars: {{ ('Rent — ' ~ (r.tenant_name or '') ~ ((' (' ~ r.tenant.unit ~ ')') if r.tenant and r.tenant.unit else '')) | tojson }},
-   category:"Rent", type:"credit", amount:{{ (r.paid_amount or r.rent_amount) | int }}},
+   category:"Rent", type:"credit", amount:{{ (r.paid_amount or 0) | int }}},
   {% endif %}{% endfor %}
   {% for e in common %}
   {date: {{ (e.date.strftime('%d %b %Y') if e.date else '—') | tojson }},
@@ -645,15 +645,15 @@ function initCharts() {
     });
   }
 
-  // FY monthly trend — data built via Jinja2 into a JS array
-  const fyMonthsRaw = [
-    {% for y, m, label in months %}
+  // FY monthly trend — the exact Apr->Mar months of the SELECTED financial
+  // year (fy_months, built server-side), not a generic trailing-12 window.
+  const fyMonths = [
+    {% for y, m, label in fy_months %}
     {% set mo = namespace(v=0) %}
-    {% for r in fy_records %}{% if r.month == m and r.year == y and r.status == 'Paid' %}{% set mo.v = mo.v + (r.paid_amount or r.rent_amount) %}{% endif %}{% endfor %}
+    {% for r in fy_records %}{% if r.month == m and r.year == y and r.status == 'Paid' %}{% set mo.v = mo.v + (r.paid_amount or 0) %}{% endif %}{% endfor %}
     { label: {{ label | tojson }}, income: {{ mo.v | int }} },
     {% endfor %}
   ];
-  const fyMonths = fyMonthsRaw.slice(0, 12).reverse();
 
   const trendEl = document.getElementById('monthlyTrend');
   if (trendEl && fyMonths.length) {
@@ -676,16 +676,15 @@ function initCharts() {
     });
   }
 
-  // Income vs Expense bar
-  const fyExpRaw = [
-    {% for y, m, label in months %}
+  // Income vs Expense bar — same FY Apr->Mar months as the trend chart above
+  const fyExp = [
+    {% for y, m, label in fy_months %}
     {% set me = namespace(v=0) %}
     {% for e in fy_common   %}{% if e.date and e.date.month == m and e.date.year == y %}{% set me.v = me.v + e.amount %}{% endif %}{% endfor %}
     {% for e in fy_building %}{% if e.date and e.date.month == m and e.date.year == y %}{% set me.v = me.v + e.amount %}{% endif %}{% endfor %}
     {{ me.v | int }},
     {% endfor %}
   ];
-  const fyExp = fyExpRaw.slice(0, 12).reverse();
 
   const barEl = document.getElementById('incomeExpenseBar');
   if (barEl && fyMonths.length) {

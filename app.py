@@ -718,8 +718,11 @@ def dashboard():
                    )
                    .all())
 
-    collected   = sum(r.paid_amount or r.rent_amount for r in cur_records if r.status == "Paid")
-    pending_amt = sum(r.rent_amount for r in cur_records if r.status != "Paid")
+    collected   = sum(r.paid_amount or 0 for r in cur_records if r.status == "Paid")
+    # Outstanding = whatever of the billed rent isn't actually paid yet —
+    # including the shortfall on a "Paid" record that only got a partial
+    # amount recorded, not just records still marked Pending.
+    pending_amt = sum(max(0.0, (r.rent_amount or 0) - (r.paid_amount or 0)) for r in cur_records)
     # Overdue = unpaid records past the due day of the FOLLOWING month
     # (rent for September is only late after e.g. the 10th of October).
     overdue_recs = _overdue_records(today)
@@ -768,7 +771,7 @@ def dashboard():
         if r.payment_date:
             k = r.payment_date.strftime("%b")
             if k in monthly:
-                monthly[k] += (r.paid_amount or r.rent_amount)
+                monthly[k] += (r.paid_amount or 0)
 
     # ── Pie chart: aggregate expenses in DB (not Python loop) ──
     common_cats = {
@@ -918,7 +921,7 @@ def rent_history():
             ))
 
     total_expected = sum(r.rent_amount for r in records)
-    total_collected = sum((r.paid_amount or r.rent_amount or 0) for r in records if r.status == "Paid")
+    total_collected = sum((r.paid_amount or 0) for r in records if r.status == "Paid")
     paid_count   = sum(1 for r in records if r.status == "Paid")
     pending_count = sum(1 for r in records if r.status != "Paid")
 
@@ -1268,7 +1271,7 @@ def renter_detail(tid):
         "months_pending": len(all_recs) - len(paid_recs),
         "months_overdue": sum(1 for r in all_recs if r.is_overdue(today)),
         "total_billed":   sum(r.rent_amount or 0 for r in all_recs),
-        "total_collected": sum((r.paid_amount or r.rent_amount or 0) for r in paid_recs),
+        "total_collected": sum((r.paid_amount or 0) for r in paid_recs),
         "last_payment":   max((r.payment_date for r in paid_recs if r.payment_date), default=None),
     }
     summary["outstanding"] = max(0.0, summary["total_billed"] - summary["total_collected"])
@@ -1888,7 +1891,7 @@ def income_expenses():
             continue
         k = r.payment_date.strftime("%Y-%m")
         if k in paid_by_month:
-            paid_by_month[k] += float(r.paid_amount if r.paid_amount is not None else r.rent_amount or 0.0)
+            paid_by_month[k] += float(r.paid_amount or 0.0)
     for row in all_common:
         if row.date:
             k = row.date.strftime("%Y-%m")
@@ -1920,17 +1923,44 @@ def ca_audit():
         m = today.month - i; y = today.year
         while m <= 0: m += 12; y -= 1
         months.append((y, m, date(y, m, 1).strftime("%B %Y")))
-    years = list(range(today.year, today.year - 5, -1))
 
-    # FY bounds (Apr-Mar) computed once, shared between display & FY panels
-    fy_start_year = sel_year if sel_month >= 4 else sel_year - 1
-    fy_start = date(fy_start_year, 4, 1)
-    fy_end   = date(fy_start_year + 1, 4, 1)
+    # Financial Year = April -> March. The Year selector picks an FY by its
+    # START year (e.g. selecting "FY 2026-27" sends year=2026), so the list
+    # of selectable years is anchored to the FY we're currently in — not the
+    # raw calendar year — and every year's option is labelled "FY YYYY–YY".
+    cur_fy_start_year = today.year if today.month >= 4 else today.year - 1
+    years = list(range(cur_fy_start_year, cur_fy_start_year - 5, -1))
+    year_options = [(y, f"FY {y}–{str(y + 1)[2:]}") for y in years]
 
     if view_mode == "year":
-        year_start  = date(sel_year, 1, 1)
-        year_end    = date(sel_year + 1, 1, 1)
-        sel_label   = str(sel_year)
+        # In Year view, sel_year IS the FY start year directly — so the
+        # "display" window and the "FY" window are literally the same
+        # April -> March period. No more silent Jan-Dec drift.
+        fy_start_year = sel_year
+    else:
+        fy_start_year = sel_year if sel_month >= 4 else sel_year - 1
+
+    fy_start = date(fy_start_year, 4, 1)
+    fy_end   = date(fy_start_year + 1, 4, 1)
+    fy_label = f"FY {fy_start_year}–{str(fy_start_year + 1)[2:]}"
+
+    # The 12 calendar months that make up the SELECTED financial year, in
+    # chronological order (Apr, May, ... Mar) — used by the FY Monthly Trend
+    # chart so it always matches the FY the P&L is showing, never a generic
+    # "trailing 12 months from today" window.
+    fy_months = []
+    for i in range(12):
+        mo = 4 + i
+        yr = fy_start_year
+        if mo > 12:
+            mo -= 12
+            yr += 1
+        fy_months.append((yr, mo, date(yr, mo, 1).strftime("%b %Y")))
+
+    if view_mode == "year":
+        year_start  = fy_start
+        year_end    = fy_end
+        sel_label   = fy_label
         month_start, month_end = year_start, year_end
     else:
         sel_label = date(sel_year, sel_month, 1).strftime("%B %Y")
@@ -1959,7 +1989,8 @@ def ca_audit():
 
     # Split in Python - zero extra DB round-trips
     if view_mode == "year":
-        rent_records = [r for r in all_rr if r.year == sel_year]
+        # Display window == FY window in Year view now, so no extra filtering needed.
+        rent_records = all_rr
     else:
         rent_records = [r for r in all_rr if r.month == sel_month and r.year == sel_year]
 
@@ -1969,11 +2000,11 @@ def ca_audit():
     fy_common   = [e for e in all_common   if fy_start <= e.date < fy_end]
     fy_building = [e for e in all_building if fy_start <= e.date < fy_end]
 
-    fy_label = f"FY {fy_start_year}–{str(fy_start_year+1)[2:]}"
     return render_template("ca_audit.html",
         rent_records=rent_records, common=common, building=building,
         fy_records=fy_records, fy_common=fy_common, fy_building=fy_building,
-        tenants=tenants, months=months, years=years,
+        tenants=tenants, months=months, years=years, year_options=year_options,
+        fy_months=fy_months,
         sel_year=sel_year, sel_month=sel_month, sel_label=sel_label,
         view_mode=view_mode, fy_label=fy_label, today=today)
 # ── UNIT ANALYTICS ────────────────────────────────────────────────────────────
@@ -2047,13 +2078,17 @@ def unit_analytics():
         for r in recs_by_tenant.get(t.id, []):
             u["months_tracked"] += 1
             u["billed"] += float(r.rent_amount or 0)
+            paid_amt = float(r.paid_amount or 0)
+            u["collected"] += paid_amt
+            # Outstanding = whatever of the billed rent is still not paid,
+            # whether the record is marked Pending, or Paid with only a
+            # partial amount recorded (paid_amount < rent_amount).
+            u["outstanding"] += max(0.0, float(r.rent_amount or 0) - paid_amt)
             if r.status == "Paid":
                 u["months_paid"] += 1
-                u["collected"] += float(r.paid_amount or r.rent_amount or 0)
                 if r.payment_date and (u["last_payment"] is None or r.payment_date > u["last_payment"]):
                     u["last_payment"] = r.payment_date
             else:
-                u["outstanding"] += float(r.rent_amount or 0)
                 if r.is_overdue(today):
                     u["months_overdue"] += 1
 
@@ -2295,7 +2330,7 @@ def api_dashboard():
     for r in RentRecord.query.filter_by(status="Paid").all():
         if r.payment_date:
             k = r.payment_date.strftime("%b")
-            if k in monthly: monthly[k] += (r.paid_amount or r.rent_amount)
+            if k in monthly: monthly[k] += (r.paid_amount or 0)
     total_common = db.session.query(
         db.func.coalesce(db.func.sum(CommonExpense.amount), 0.0)
     ).filter(
@@ -2311,8 +2346,8 @@ def api_dashboard():
 
     return jsonify({"total_tenants": len(cur_records), "paid_count": len(paid_recs),
         "pending_count": len(pending_recs),
-        "collected": sum(r.paid_amount or r.rent_amount for r in paid_recs),
-        "pending_amount": sum(r.rent_amount for r in pending_recs),
+        "collected": sum(r.paid_amount or 0 for r in paid_recs),
+        "pending_amount": sum(max(0.0, (r.rent_amount or 0) - (r.paid_amount or 0)) for r in cur_records),
         "monthly_income": monthly,
         "total_common": total_common,
         "total_building": total_building})
@@ -2419,6 +2454,28 @@ def upload_excel():
         except ValidationError:
             return None
 
+    def _resolve_tenant(tenant_name, tenant_id_cell, sheet_label):
+        """Identify a tenant by DATABASE ID first (a "Tenant ID" column
+        present whenever the sheet came from our own export), falling back
+        to a name lookup only when no ID was given — and refusing to guess
+        when that name lookup is ambiguous. Returns (tenant_or_None, error_or_None).
+        """
+        if tenant_id_cell not in (None, ""):
+            try:
+                t = Tenant.query.get(int(tenant_id_cell))
+                if t:
+                    return t, None
+            except (TypeError, ValueError):
+                pass
+        matches = Tenant.query.filter_by(name=tenant_name).all()
+        if len(matches) > 1:
+            return None, (f"{sheet_label}: {len(matches)} tenants share the name "
+                           f"'{tenant_name}' and the sheet has no Tenant ID — skipped to avoid "
+                           f"updating the wrong tenant. Re-export from this app to include Tenant ID.")
+        if matches:
+            return matches[0], None
+        return None, f"{sheet_label}: tenant '{tenant_name}' not found"
+
     # ── Tenants sheet ──────────────────────────────────────────────────────
     if "Tenants" in wb.sheetnames:
         ws = wb["Tenants"]
@@ -2427,6 +2484,7 @@ def upload_excel():
             name = cell(row, 1)
             if not name: continue
             try:
+                id_cell     = cell(row, 0)          # "#" column = tenant.id from our own export
                 phone       = str(cell(row, 2) or "")[:20]
                 email       = str(cell(row, 3) or "")[:120]
                 unit        = str(cell(row, 4) or "")[:20]
@@ -2442,7 +2500,28 @@ def upload_excel():
                 pay_method  = str(cell(row,16) or "")[:20]
                 notes       = str(cell(row,17) or "")
                 if not (1 <= due_day <= 31): due_day = 5
-                existing = Tenant.query.filter_by(name=name, phone=phone).first()
+
+                # Identify the tenant by their DATABASE ID first (the "#"
+                # column, present whenever this file came from our own
+                # export) — names are NOT guaranteed unique, so matching by
+                # name alone can silently update the wrong tenant.
+                existing = None
+                if id_cell not in (None, ""):
+                    try:
+                        existing = Tenant.query.get(int(id_cell))
+                    except (TypeError, ValueError):
+                        existing = None
+                if existing is None:
+                    name_matches = Tenant.query.filter_by(name=name, phone=phone).all()
+                    if len(name_matches) > 1:
+                        errors.append(
+                            f"Tenants row '{name}': {len(name_matches)} existing tenants share "
+                            f"this name and phone, and the sheet has no Tenant ID (# column) to "
+                            f"tell them apart — skipped to avoid updating the wrong one.")
+                        stats["skipped"] += 1
+                        continue
+                    existing = name_matches[0] if name_matches else None
+
                 if existing:
                     existing.email=email; existing.unit=unit
                     existing.unit_number=unit_number; existing.due_day=due_day
@@ -2487,27 +2566,51 @@ def upload_excel():
                 year        = int(cell(row, 4) or 0)
                 if not (1 <= month <= 12) or year < 2000: continue
                 rent_amount = to_float(cell(row, 9)) or 0.0
-                paid_amount = to_float(cell(row,10)) or 0.0
-                status      = "Paid" if str(cell(row,11) or "").lower() == "paid" else "Pending"
+                # Option B: a blank "Paid" cell means NO PAYMENT RECORDED,
+                # not a legitimate ₹0 payment — never silently coerce it.
+                paid_amount = to_float(cell(row, 10))          # stays None if blank
+                status      = "Paid" if str(cell(row, 11) or "").lower() == "paid" else "Pending"
+                if status == "Paid" and paid_amount is None:
+                    # Row is marked Paid but no explicit paid amount was given
+                    # (older export / hand-built sheet with no Paid column) —
+                    # the only reasonable assumption is that the full rent
+                    # was collected, since "Paid" with an unknown amount
+                    # would otherwise contradict its own status.
+                    paid_amount = rent_amount
+                elif status != "Paid":
+                    paid_amount = None   # never attach a payment amount to a Pending row
                 pay_date    = to_date(cell(row,12))
                 pay_method  = str(cell(row,13) or "")[:30]
                 txn_id      = str(cell(row,14) or "")[:100]
                 cf_val      = cell(row,15)
                 carried     = str(cf_val).lower() in ("yes","true","1") if cf_val else False
                 notes_v     = str(cell(row,16) or "")
-                tenant = Tenant.query.filter_by(name=tenant_name).first()
-                tid    = tenant.id if tenant else None
+
+                # Identify the tenant by DATABASE ID (the "Tenant ID" column
+                # our own export now includes) rather than by name, since
+                # names are not unique — two "Rahul Sharma"s must never get
+                # each other's rent records.
+                tenant, terr = _resolve_tenant(tenant_name, cell(row, 17),
+                                                f"Rent Records row '{tenant_name}' ({month}/{year})")
+                if terr:
+                    errors.append(terr)
+                    stats["skipped"] += 1
+                    continue
+                tid = tenant.id
+
+                # Match the existing record by (tenant_id, month, year) — the
+                # table's own unique constraint — never by tenant name.
                 existing = RentRecord.query.filter_by(
-                    tenant_name=tenant_name, month=month, year=year).first()
+                    tenant_id=tid, month=month, year=year).first()
                 if existing:
                     existing.rent_amount=rent_amount; existing.paid_amount=paid_amount
                     existing.status=status; existing.payment_date=pay_date
                     existing.payment_method=pay_method; existing.transaction_id=txn_id
                     existing.carried_forward=carried; existing.notes=notes_v
-                elif tid:
+                else:
                     db.session.add(RentRecord(
-                        tenant_id=tid, tenant_name=tenant_name,
-                        owner_id=(tenant.owner_id if tenant else None),
+                        tenant_id=tid, tenant_name=tenant.name,
+                        owner_id=tenant.owner_id,
                         month=month, year=year,
                         rent_amount=rent_amount, paid_amount=paid_amount,
                         status=status, payment_date=pay_date,
@@ -2576,9 +2679,10 @@ def upload_excel():
                 other_deduct  = to_float(cell(row,10)) or 0.0
                 return_amount = to_float(cell(row,11)) or 0.0
                 ded_notes     = str(cell(row,12) or "")
-                tenant = Tenant.query.filter_by(name=tenant_name).first()
-                if not tenant:
-                    errors.append(f"Vacate Settlements: tenant '{tenant_name}' not found")
+                tenant, terr = _resolve_tenant(tenant_name, cell(row, 13),
+                                                f"Vacate Settlements row '{tenant_name}'")
+                if terr:
+                    errors.append(terr)
                     stats["skipped"] += 1
                     continue
                 existing = VacateSettlement.query.filter_by(tenant_id=tenant.id).first()
@@ -2612,9 +2716,10 @@ def upload_excel():
                 txn      = str(cell(row, 6) or "")
                 notes_v  = str(cell(row, 7) or "")
                 if amount <= 0: continue
-                tenant = Tenant.query.filter_by(name=tenant_name).first()
-                if not tenant:
-                    errors.append(f"Deposit Payments: tenant '{tenant_name}' not found")
+                tenant, terr = _resolve_tenant(tenant_name, cell(row, 8),
+                                                f"Deposit Payments row '{tenant_name}'")
+                if terr:
+                    errors.append(terr)
                     stats["skipped"] += 1
                     continue
                 # Skip exact duplicates so re-importing the same file is safe
@@ -2755,7 +2860,7 @@ def download_excel():
     cols_r = ["#","Tenant","Unit","Month","Year","Rent Month","Billing Cycle",
               "Billed In","Due Date",
               "Rent (₹)","Paid (₹)","Status","Payment Date",
-              "Method","Transaction ID","Carried Forward","Notes"]
+              "Method","Transaction ID","Carried Forward","Notes","Tenant ID"]
     ws2 = make_sheet("Rent Records", cols_r)
     records = (RentRecord.query
                .options(joinedload(RentRecord.tenant))
@@ -2768,10 +2873,10 @@ def download_excel():
         due_d  = r.due_date_obj() if r.tenant else None
         row = [r.id, r.tenant_name or "", unit, r.month, r.year,
                r.month_label(), r.cycle_label(), r.billed_in_label(), due_d,
-               r.rent_amount, r.paid_amount or 0,
+               r.rent_amount, r.paid_amount,
                r.status, r.payment_date,
                r.payment_method or "", r.transaction_id or "",
-               "Yes" if r.carried_forward else "No", r.notes or ""]
+               "Yes" if r.carried_forward else "No", r.notes or "", r.tenant_id]
         for ci, v in enumerate(row, 1):
             fmt = currency_fmt if ci in (10,11) else (date_fmt if ci in (9,13) else None)
             c   = data_cell(ws2, ri, ci, v, row_fill, num_fmt=fmt)
@@ -2838,7 +2943,7 @@ def download_excel():
               "Repair Charged (₹)","Repair Actual (₹)","Repair Margin (₹)",
               "Unpaid Rent Recovered (₹)","Unpaid Rent Months",
               "Other Deduction (₹)","Amount Returned (₹)",
-              "Deduction Notes"]
+              "Deduction Notes","Tenant ID"]
     ws5 = make_sheet("Vacate Settlements", cols_v)
     settlements = (VacateSettlement.query
                    .options(joinedload(VacateSettlement.tenant))
@@ -2856,7 +2961,7 @@ def download_excel():
                s.repair_charged or s.repair_cost or 0, s.repair_actual or 0, margin,
                s.unpaid_rent or 0, s.unpaid_rent_note or "",
                s.other_deduction or 0, returned,
-               s.deduction_notes or ""]
+               s.deduction_notes or "", s.tenant_id]
         money_cols = (5,6,7,8,9,11,12)
         for ci, v in enumerate(row, 1):
             fmt   = currency_fmt if ci in money_cols else (date_fmt if ci == 4 else None)
@@ -2873,7 +2978,7 @@ def download_excel():
 
     # ── 6. Deposit Payments ───────────────────────────────────────────────────
     cols_d = ["#","Tenant","Unit","Date","Amount (₹)","Method",
-              "Transaction ID","Notes"]
+              "Transaction ID","Notes","Tenant ID"]
     ws6 = make_sheet("Deposit Payments", cols_d)
     dps = (DepositPayment.query
            .options(joinedload(DepositPayment.tenant))
@@ -2883,7 +2988,7 @@ def download_excel():
         row_fill = C_ALT_ROW if ri % 2 == 1 else None
         unit = d.tenant.unit if d.tenant else ""
         row = [d.id, d.tenant_name or "", unit, d.payment_date,
-               d.amount or 0, d.method or "", d.transaction_id or "", d.notes or ""]
+               d.amount or 0, d.method or "", d.transaction_id or "", d.notes or "", d.tenant_id]
         for ci, v in enumerate(row, 1):
             fmt = currency_fmt if ci == 5 else (date_fmt if ci == 4 else None)
             data_cell(ws6, ri, ci, v, row_fill, num_fmt=fmt,
