@@ -918,7 +918,7 @@ def rent_history():
             ))
 
     total_expected = sum(r.rent_amount for r in records)
-    total_collected = sum(r.paid_amount or 0 for r in records if r.status == "Paid")
+    total_collected = sum((r.paid_amount or r.rent_amount or 0) for r in records if r.status == "Paid")
     paid_count   = sum(1 for r in records if r.status == "Paid")
     pending_count = sum(1 for r in records if r.status != "Paid")
 
@@ -1268,7 +1268,7 @@ def renter_detail(tid):
         "months_pending": len(all_recs) - len(paid_recs),
         "months_overdue": sum(1 for r in all_recs if r.is_overdue(today)),
         "total_billed":   sum(r.rent_amount or 0 for r in all_recs),
-        "total_collected": sum(r.paid_amount or 0 for r in paid_recs),
+        "total_collected": sum((r.paid_amount or r.rent_amount or 0) for r in paid_recs),
         "last_payment":   max((r.payment_date for r in paid_recs if r.payment_date), default=None),
     }
     summary["outstanding"] = max(0.0, summary["total_billed"] - summary["total_collected"])
@@ -1750,7 +1750,7 @@ def add_common_expense():
             amount=parse_money(request.form.get("amount"), "Amount"),
             category=clean_text(request.form.get("category"), "Category", 80) or "Other",
             split_units=parse_int(request.form.get("split_units"), "Split units", 1, 500,
-                                  allow_blank=True, default=6),
+                                  allow_blank=True, default=5),
             date=parse_date(request.form.get("date"), "Date", required=True),
             notes=clean_text(request.form.get("notes"), "Notes", 2000, multiline=True),
         ))
@@ -1867,8 +1867,12 @@ def income_expenses():
     building = [r for r in all_building if month_start <= r.date < month_end]
 
     # ── Also fetch paid RentRecords for trend in same window ──
+    # Group by PAYMENT date, not the rent-for month/year: a record's month
+    # is the month rent is FOR, but it's actually collected the following
+    # month, so bucketing by payment_date is what makes the bars land in
+    # the calendar month the cash actually came in.
     paid_rows = db.session.query(
-        RentRecord.year, RentRecord.month,
+        RentRecord.payment_date,
         RentRecord.paid_amount, RentRecord.rent_amount,
     ).filter(
         RentRecord.status == "Paid",
@@ -1880,7 +1884,9 @@ def income_expenses():
     paid_by_month = {k: 0.0 for k in trend_keys}
     exp_by_month  = {k: 0.0 for k in trend_keys}
     for r in paid_rows:
-        k = f"{r.year}-{int(r.month):02d}"
+        if not r.payment_date:
+            continue
+        k = r.payment_date.strftime("%Y-%m")
         if k in paid_by_month:
             paid_by_month[k] += float(r.paid_amount if r.paid_amount is not None else r.rent_amount or 0.0)
     for row in all_common:
@@ -2088,7 +2094,7 @@ def unit_analytics():
                    | {today.year}, reverse=True)
 
     chart_data = ({
-        "labels":      [u["unit"] for u in unit_list],
+        "labels":      [(u["unit"] + (" #" + u["unit_numbers"] if u["unit_numbers"] else "")) for u in unit_list],
         "collected":   [round(u["collected"]) for u in unit_list],
         "outstanding": [round(u["outstanding"]) for u in unit_list],
         "rates":       [u["collection_rate"] for u in unit_list],
@@ -2523,7 +2529,7 @@ def upload_excel():
                 category    = str(cell(row, 2) or "Other")
                 exp_date    = to_date(cell(row, 3)) or date.today()
                 amount      = to_float(cell(row, 4)) or 0.0
-                split_units = max(1, min(500, int(cell(row, 5) or 6)))
+                split_units = max(1, min(500, int(cell(row, 5) or 5)))
                 notes_v     = str(cell(row, 7) or "")
                 db.session.add(CommonExpense(
                     description=desc, category=category, date=exp_date,
