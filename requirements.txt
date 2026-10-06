@@ -10,6 +10,7 @@ Flask-Compress>=1.15,<2
 Flask-SQLAlchemy>=3.1.1,<4
 SQLAlchemy>=2.0.30,<3
 psycopg2-binary>=2.9.9
+psycopg[binary]>=3.1,<4
 
 # App features
 APScheduler>=3.10.4,<4
