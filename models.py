@@ -71,6 +71,17 @@ def unscoped(query):
     return query.execution_options(skip_owner_filter=True)
 
 
+def current_rent_month(today=None):
+    """(year, month) of the rent that is being COLLECTED right now.
+
+    Rent for month M is collected in month M+1, so during October the live
+    cycle is Sep-Oct (rent month = September). Oct-Nov only starts on 1 Nov.
+    """
+    from datetime import date as _date
+    today = today or _date.today()
+    return (today.year - 1, 12) if today.month == 1 else (today.year, today.month - 1)
+
+
 def get_database_url():
     # `or` (not a get() default): a blank DATABASE_URL= line in .env must mean "use SQLite".
     url = (os.environ.get("DATABASE_URL") or "").strip() or "sqlite:///rent.db"
@@ -172,9 +183,8 @@ class Tenant(OwnedMixin, db.Model):
 
     def current_due_date(self):
         """Due date for the CURRENT month's rent — falls in next month."""
-        from datetime import date as _date
-        today = _date.today()
-        return self.due_date_for_rent_month(today.year, today.month)
+        ry, rm = current_rent_month()
+        return self.due_date_for_rent_month(ry, rm)
 
     def due_date_this_month(self):
         """Return a date object for the due date in the current month."""

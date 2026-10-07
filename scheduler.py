@@ -111,10 +111,13 @@ def daily_backup(app):
 def ensure_monthly_records(app):
     """Create Pending RentRecords for all active tenants for the current month if missing.
     Runs once at midnight via scheduler — NOT on every request."""
-    from models import Tenant, RentRecord, db, unscoped
+    from models import Tenant, RentRecord, db, unscoped, current_rent_month
 
     with app.app_context():
         today = date.today()
+        # Rent for month M is collected in M+1: during October the live cycle
+        # is Sep-Oct, so the record to create is for SEPTEMBER, not October.
+        rent_year, rent_month = current_rent_month(today)
         # Background jobs run outside a login session, so they must span every
         # account explicitly rather than relying on the per-account filter.
         active_tenants = unscoped(
@@ -124,8 +127,8 @@ def ensure_monthly_records(app):
         active_ids = [t.id for t in active_tenants]
         existing_ids = {
             tid for (tid,) in unscoped(db.session.query(RentRecord.tenant_id)).filter(
-                RentRecord.month == today.month,
-                RentRecord.year == today.year,
+                RentRecord.month == rent_month,
+                RentRecord.year == rent_year,
                 RentRecord.tenant_id.in_(active_ids),
             ).all()
         }
@@ -133,21 +136,22 @@ def ensure_monthly_records(app):
             RentRecord(
                 tenant_id=t.id,
                 tenant_name=t.name,
-                month=today.month,
-                year=today.year,
+                month=rent_month,
+                year=rent_year,
                 rent_amount=t.amount,
                 status="Pending",
                 owner_id=t.owner_id,
             )
             for t in active_tenants
             if t.id not in existing_ids
+            and not (t.join_date and (t.join_date.year, t.join_date.month) > (rent_year, rent_month))
         ]
         if new_records:
             db.session.add_all(new_records)
             db.session.commit()
-            logger.info(f"[Scheduler] Created {len(new_records)} rent record(s) for {today.strftime('%B %Y')}.")
+            logger.info(f"[Scheduler] Created {len(new_records)} rent record(s) for {date(rent_year, rent_month, 1).strftime('%B %Y')}.")
         else:
-            logger.info(f"[Scheduler] All rent records already exist for {today.strftime('%B %Y')}.")
+            logger.info(f"[Scheduler] All rent records already exist for {date(rent_year, rent_month, 1).strftime('%B %Y')}.")
 
 
 def _acquire_scheduler_lock(app):
