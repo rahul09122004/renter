@@ -2480,6 +2480,24 @@ def upload_excel():
         except ValidationError:
             return None
 
+    # ── In-memory lookups: ONE query per table up front instead of several
+    # database round trips per spreadsheet row (over a remote database those
+    # per-row trips made big imports exceed the 60 s worker timeout).
+    _t_by_id, _t_by_name, _t_by_name_phone = {}, {}, {}
+
+    def _index_tenant(t):
+        if t.id is not None:
+            _t_by_id[t.id] = t
+        _t_by_name.setdefault(t.name, []).append(t)
+        _t_by_name_phone.setdefault((t.name, t.phone), []).append(t)
+
+    def _reload_tenants():
+        _t_by_id.clear(); _t_by_name.clear(); _t_by_name_phone.clear()
+        for t in Tenant.query.all():           # auto-scoped to this account
+            _index_tenant(t)
+
+    _reload_tenants()
+
     def _resolve_tenant(tenant_name, tenant_id_cell, sheet_label):
         """Identify a tenant by DATABASE ID first (a "Tenant ID" column
         present whenever the sheet came from our own export), falling back
@@ -2488,12 +2506,12 @@ def upload_excel():
         """
         if tenant_id_cell not in (None, ""):
             try:
-                t = Tenant.query.get(int(tenant_id_cell))
+                t = _t_by_id.get(int(tenant_id_cell))
                 if t:
                     return t, None
             except (TypeError, ValueError):
                 pass
-        matches = Tenant.query.filter_by(name=tenant_name).all()
+        matches = _t_by_name.get(tenant_name, [])
         if len(matches) > 1:
             return None, (f"{sheet_label}: {len(matches)} tenants share the name "
                            f"'{tenant_name}' and the sheet has no Tenant ID — skipped to avoid "
@@ -2501,6 +2519,8 @@ def upload_excel():
         if matches:
             return matches[0], None
         return None, f"{sheet_label}: tenant '{tenant_name}' not found"
+
+    _dep_tids = {tid_ for (tid_,) in db.session.query(DepositPayment.tenant_id).all()}
 
     # ── Tenants sheet ──────────────────────────────────────────────────────
     if "Tenants" in wb.sheetnames:
@@ -2534,11 +2554,11 @@ def upload_excel():
                 existing = None
                 if id_cell not in (None, ""):
                     try:
-                        existing = Tenant.query.get(int(id_cell))
+                        existing = _t_by_id.get(int(id_cell))
                     except (TypeError, ValueError):
                         existing = None
                 if existing is None:
-                    name_matches = Tenant.query.filter_by(name=name, phone=phone).all()
+                    name_matches = _t_by_name_phone.get((name, phone), [])
                     if len(name_matches) > 1:
                         errors.append(
                             f"Tenants row '{name}': {len(name_matches)} existing tenants share "
@@ -2566,13 +2586,14 @@ def upload_excel():
                         occupancy_status=occupancy,
                         payment_method=pay_method, notes=notes)
                     db.session.add(t_obj)
+                    _index_tenant(t_obj)       # so later rows in this file find it
                     stats["tenants"] += 1
                 # Record the collected deposit as an instalment when the
                 # sheet has no separate Deposit Payments rows for them.
-                db.session.flush()
-                if dep_paid and dep_paid > 0 and not DepositPayment.query.filter_by(tenant_id=t_obj.id).first():
+                if dep_paid and dep_paid > 0 and (t_obj.id is None or t_obj.id not in _dep_tids):
                     db.session.add(DepositPayment(
-                        tenant_id=t_obj.id, tenant_name=t_obj.name, owner_id=t_obj.owner_id,
+                        tenant=t_obj, tenant_name=t_obj.name,
+                        owner_id=t_obj.owner_id or session.get("owner_id"),
                         amount=dep_paid, payment_date=join_date, method="cash",
                         notes="Imported from spreadsheet."))
                     stats["deposit_payments"] += 1
@@ -2580,6 +2601,9 @@ def upload_excel():
                 errors.append(f"Tenants row '{name}': invalid or unsupported data")
                 stats["skipped"] += 1
         db.session.commit()
+        _reload_tenants()          # new tenants now have real ids
+
+    _rr = {(r.tenant_id, r.month, r.year): r for r in RentRecord.query.all()}
 
     # ── Rent Records sheet ─────────────────────────────────────────────────
     if "Rent Records" in wb.sheetnames:
@@ -2626,22 +2650,23 @@ def upload_excel():
 
                 # Match the existing record by (tenant_id, month, year) — the
                 # table's own unique constraint — never by tenant name.
-                existing = RentRecord.query.filter_by(
-                    tenant_id=tid, month=month, year=year).first()
+                existing = _rr.get((tid, month, year))
                 if existing:
                     existing.rent_amount=rent_amount; existing.paid_amount=paid_amount
                     existing.status=status; existing.payment_date=pay_date
                     existing.payment_method=pay_method; existing.transaction_id=txn_id
                     existing.carried_forward=carried; existing.notes=notes_v
                 else:
-                    db.session.add(RentRecord(
+                    new_rr = RentRecord(
                         tenant_id=tid, tenant_name=tenant.name,
                         owner_id=tenant.owner_id,
                         month=month, year=year,
                         rent_amount=rent_amount, paid_amount=paid_amount,
                         status=status, payment_date=pay_date,
                         payment_method=pay_method, transaction_id=txn_id,
-                        carried_forward=carried, notes=notes_v))
+                        carried_forward=carried, notes=notes_v)
+                    db.session.add(new_rr)
+                    _rr[(tid, month, year)] = new_rr
                     stats["rent_records"] += 1
             except Exception as ex:
                 errors.append(f"Rent Records row '{tenant_name}': invalid or unsupported data")
@@ -2689,6 +2714,8 @@ def upload_excel():
                 stats["skipped"] += 1
         db.session.commit()
 
+    _vs = {s.tenant_id: s for s in VacateSettlement.query.all()}
+
     # ── Vacate Settlements sheet ───────────────────────────────────────────
     if "Vacate Settlements" in wb.sheetnames:
         ws = wb["Vacate Settlements"]
@@ -2711,12 +2738,13 @@ def upload_excel():
                     errors.append(terr)
                     stats["skipped"] += 1
                     continue
-                existing = VacateSettlement.query.filter_by(tenant_id=tenant.id).first()
+                existing = _vs.get(tenant.id)
                 if existing:
                     s_obj = existing
                 else:
                     s_obj = VacateSettlement(tenant_id=tenant.id, owner_id=tenant.owner_id)
                     db.session.add(s_obj)
+                    _vs[tenant.id] = s_obj
                     stats["vacate_settlements"] += 1
                 s_obj.deposit_held=deposit_held
                 s_obj.repair_charged=repair_charged; s_obj.repair_actual=repair_actual
@@ -2728,6 +2756,8 @@ def upload_excel():
                 errors.append(f"Vacate Settlements row '{tenant_name}': invalid or unsupported data")
                 stats["skipped"] += 1
         db.session.commit()
+
+    _dp_seen = {(d.tenant_id, d.amount, d.payment_date) for d in DepositPayment.query.all()}
 
     # ── Deposit Payments sheet ─────────────────────────────────────────────
     if "Deposit Payments" in wb.sheetnames:
@@ -2749,9 +2779,8 @@ def upload_excel():
                     stats["skipped"] += 1
                     continue
                 # Skip exact duplicates so re-importing the same file is safe
-                dup = DepositPayment.query.filter_by(
-                    tenant_id=tenant.id, amount=amount, payment_date=pay_date).first()
-                if dup: continue
+                if (tenant.id, amount, pay_date) in _dp_seen: continue
+                _dp_seen.add((tenant.id, amount, pay_date))
                 db.session.add(DepositPayment(
                     tenant_id=tenant.id, tenant_name=tenant.name, owner_id=tenant.owner_id,
                     amount=amount, payment_date=pay_date,

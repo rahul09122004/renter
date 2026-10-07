@@ -5,7 +5,7 @@ services:
     name: rent-manager
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --workers 2 --bind 0.0.0.0:$PORT --timeout 60 --worker-class gthread --threads 2 --access-logfile - --error-logfile - --log-level info
+    startCommand: gunicorn app:app --workers 2 --bind 0.0.0.0:$PORT --timeout 180 --worker-class gthread --threads 2 --access-logfile - --error-logfile - --log-level info
     healthCheckPath: /health
     envVars:
       - key: APP_ENV
